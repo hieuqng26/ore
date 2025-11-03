@@ -342,4 +342,4 @@ Examples/**/pricingstats.csv
 *.fls
 
 .gitmodules
-
+.venv
