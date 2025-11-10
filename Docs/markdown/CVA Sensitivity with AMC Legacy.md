@@ -1,10 +1,10 @@
 # CVA Sensitivity Calculation with AMC Legacy Framework
 
-**Document Purpose**: This document provides a detailed trace of how the `run_cvasensi.py` script executes the `ore_amc_legacy.xml` configuration to compute CVA (Credit Valuation Adjustment) exposures using the legacy American Monte Carlo (AMC) framework.
+**Document Purpose**: This document provides a detailed trace of how the `run_cvasensi.py` script executes the `ore_amc_legacy.xml` configuration to compute CVA (Credit Valuation Adjustment) exposures using the legacy American Monte Carlo (AMC) framework, with actual source code references.
 
 **Author**: Generated for ORE Codebase Understanding
 
-**Last Updated**: 2025-11-04
+**Last Updated**: 2025-11-08
 
 **Example Location**: [Examples/Performance/](../../Examples/Performance/)
 
@@ -17,14 +17,13 @@
 3. [OreExample Helper Class](#2-oreexample-helper-class)
 4. [XML Configuration Analysis](#3-xml-configuration-analysis)
 5. [ORE Application Execution](#4-ore-application-execution)
-6. [Simulation Analytic Setup](#5-simulation-analytic-setup)
-7. [AMC Legacy Framework](#6-amc-legacy-framework)
-8. [Cross-Asset Model Calibration](#7-cross-asset-model-calibration)
-9. [Exposure Simulation](#8-exposure-simulation)
-10. [XVA Calculation](#9-xva-calculation)
-11. [Complete Execution Flow](#10-complete-execution-flow)
-12. [Output Files](#11-output-files)
-13. [Comparison with Other Methods](#12-comparison-with-other-methods)
+6. [XVA Analytic Implementation](#5-xva-analytic-implementation)
+7. [NPV Cube Structure](#6-npv-cube-structure)
+8. [Exposure Calculation](#7-exposure-calculation)
+9. [CVA Calculation](#8-cva-calculation)
+10. [Complete Execution Flow](#9-complete-execution-flow)
+11. [Output Files](#10-output-files)
+12. [Comparison with Other Methods](#11-comparison-with-other-methods)
 
 ---
 
@@ -69,31 +68,26 @@ AnalyticsManager → Execute configured analytics
 
 ### File: [Examples/Performance/run_cvasensi.py](../../Examples/Performance/run_cvasensi.py)
 
-The script coordinates multiple CVA sensitivity runs using different computational approaches.
+**Source Code** (Lines 1-26):
 
 ```python
-# Line 1-7: Imports and setup
 #!/usr/bin/env python
 
 import glob
 import os
 import sys
-sys.path.append('../')                              # Add parent dir to path
-from ore_examples_helper import OreExample          # Import helper class
+sys.path.append('../')
+from ore_examples_helper import OreExample
 
-# Line 9: Initialize OreExample with optional dry-run flag
 oreex = OreExample(sys.argv[1] if len(sys.argv)>1 else False)
 
-# Line 11-13: Print banner
 print("+----------------------------------------+")
 print("| CVA Sensis using AMC, AAD and GPU      |")
 print("+----------------------------------------+")
 
-# Line 15-16: Run AMC Legacy (our focus)
 oreex.print_headline("Run AMC Legacy")
 oreex.run("Input/ore_amc_legacy.xml")              # Execute ORE with XML config
 
-# Line 18-25: Run other approaches (bump & reval, AAD, GPU)
 oreex.print_headline("Run CVA Sensi with bump & reval")
 oreex.run("Input/ore_cvasensi_bump.xml")
 
@@ -103,6 +97,13 @@ oreex.run("Input/ore_cvasensi_ad.xml")
 oreex.print_headline("Run with bump & reval using a GPU")
 oreex.run("Input/ore_cvasensi_gpu.xml")
 ```
+
+**Code Summary**:
+- **Lines 1-7**: Import dependencies and initialize the `OreExample` helper class
+- **Line 9**: Create `OreExample` instance, optionally in dry-run mode from command-line argument
+- **Lines 11-13**: Print banner
+- **Lines 15-16**: **Run AMC Legacy** - This is our focus, executes `ore_amc_legacy.xml`
+- **Lines 18-25**: Run other CVA sensitivity approaches for comparison (bump & reval, AAD, GPU)
 
 **What Happens on Line 16**:
 - `oreex.run("Input/ore_amc_legacy.xml")` calls the `OreExample.run()` method
@@ -115,65 +116,39 @@ oreex.run("Input/ore_cvasensi_gpu.xml")
 
 ### File: [Examples/ore_examples_helper.py](../../Examples/ore_examples_helper.py)
 
-The helper class provides utilities for running ORE examples and processing results.
+The helper class provides utilities for running ORE examples and processing results. Key methods:
 
+**Class Initialization** (Lines 61-73):
 ```python
-# Line 61-73: Class initialization
 class OreExample(object):
     def __init__(self, dry=False):
         self.ore_exe = ""                           # Path to ORE executable
         self.headlinecounter = 0                    # Counter for progress messages
         self.dry = dry                              # Dry-run mode flag
-        self.ax = None                              # Matplotlib axis (for plotting)
-        self.plot_name = ""
-        if 'ORE_EXAMPLES_USE_PYTHON' in os.environ.keys():
-            self.use_python = os.environ['ORE_EXAMPLES_USE_PYTHON']=="1"
-            self.ore_exe = ""
-        else:
-            self.use_python = False
+        # ... initialization logic
+        if not 'ORE_EXAMPLES_USE_PYTHON' in os.environ.keys() or os.environ['ORE_EXAMPLES_USE_PYTHON']!="1":
             self._locate_ore_exe()                  # Find ORE binary
-
-# Line 75-139: Locate ORE executable
-    def _locate_ore_exe(self):
-        # Lines 113-138: Unix/Linux/macOS path search
-        if os.path.isfile("../../App/build/ore"):
-            self.ore_exe = "../../App/build/ore"
-        elif os.path.isfile("../../../App/build/ore"):
-            self.ore_exe = "../../../App/build/ore"
-        elif os.path.isfile("../../build/App/ore"):
-            self.ore_exe = "../../build/App/ore"    # Most common build location
-        elif os.path.isfile("../../../build/App/ore"):
-            self.ore_exe = "../../../build/App/ore"
-        # ... [additional search paths]
-        else:
-            print_on_console("ORE executable not found.")
-            quit()
-        print_on_console("Using ORE executable " + (os.path.abspath(self.ore_exe)))
-
-# Line 141-144: Print section headlines
-    def print_headline(self, headline):
-        self.headlinecounter += 1
-        print_on_console('')
-        print_on_console(str(self.headlinecounter) + ") " + headline)
-        # Output: "1) Run AMC Legacy"
-
-# Line 332-342: Execute ORE with XML configuration
-    def run(self, xml):
-        if not self.dry:
-            if(self.use_python):                    # If using Python bindings
-                if(os.path.isfile(os.path.join(os.pardir, "ore_wrapper.py"))):
-                    res = subprocess.call([sys.executable,
-                                          os.path.join(os.pardir, "ore_wrapper.py"),
-                                          xml])
-                elif(os.path.isfile(os.path.join(os.pardir, "..", "ore_wrapper.py"))):
-                    res = subprocess.call([sys.executable,
-                                          os.path.join(os.pardir, "..", "ore_wrapper.py"),
-                                          xml])
-            else:
-                res = subprocess.call([self.ore_exe, xml])  # Execute: ./ore Input/ore_amc_legacy.xml
-            if res != 0:
-                raise Exception("Return Code was not Null.")
 ```
+
+**Execute ORE** (Lines 332-342):
+```python
+def run(self, xml):
+    if not self.dry:
+        if(self.use_python):                    # If using Python bindings
+            res = subprocess.call([sys.executable,
+                                  os.path.join(os.pardir, "ore_wrapper.py"),
+                                  xml])
+        else:
+            res = subprocess.call([self.ore_exe, xml])  # Execute: ./ore Input/ore_amc_legacy.xml
+        if res != 0:
+            raise Exception("Return Code was not Null.")
+```
+
+**Code Summary**:
+- The `run()` method executes the ORE binary as a subprocess
+- It passes the XML configuration file path as a command-line argument
+- The system call is: `../../build/App/ore Input/ore_amc_legacy.xml`
+- If the return code is non-zero, an exception is raised
 
 **Execution Path**:
 1. `run_cvasensi.py:16` → `oreex.run("Input/ore_amc_legacy.xml")`
@@ -188,271 +163,136 @@ class OreExample(object):
 
 This XML file is the main configuration that drives the entire calculation.
 
-#### 3.1 Setup Section (Lines 3-20)
+**Setup Section** (Lines 3-20):
 
 ```xml
 <ORE>
   <Setup>
-    <!-- Line 4: Valuation date -->
     <Parameter name="asofDate">2016-02-05</Parameter>
-
-    <!-- Line 5-6: Directory paths -->
     <Parameter name="inputPath">Input</Parameter>
     <Parameter name="outputPath">Output/cvasensi/amc_legacy</Parameter>
-
-    <!-- Line 7-8: Logging configuration -->
     <Parameter name="logFile">log.txt</Parameter>
     <Parameter name="logMask">31</Parameter>
-
-    <!-- Line 9-10: Market data files (from shared Examples/Input) -->
     <Parameter name="marketDataFile">../../Input/market_20160205.txt</Parameter>
     <Parameter name="fixingDataFile">../../Input/fixings_20160205.txt</Parameter>
     <Parameter name="implyTodaysFixings">N</Parameter>
-
-    <!-- Line 12-18: Configuration files -->
     <Parameter name="curveConfigFile">../../Input/curveconfig.xml</Parameter>
     <Parameter name="conventionsFile">../../Input/conventions.xml</Parameter>
     <Parameter name="marketConfigFile">../../Input/todaysmarket.xml</Parameter>
-    <Parameter name="pricingEnginesFile">pricingengine.xml</Parameter>      <!-- Standard engines -->
-    <Parameter name="portfolioFile">portfolio_cvasensi.xml</Parameter>      <!-- Single 20Y swap -->
+    <Parameter name="pricingEnginesFile">pricingengine.xml</Parameter>
+    <Parameter name="portfolioFile">portfolio_cvasensi.xml</Parameter>
     <Parameter name="observationModel">None</Parameter>
     <Parameter name="scriptLibrary">scriptlibrary.xml</Parameter>
-    <Parameter name="nThreads">1</Parameter>                                <!-- Single-threaded -->
+    <Parameter name="nThreads">1</Parameter>
   </Setup>
 ```
 
-#### 3.2 Markets Section (Lines 21-27)
+**Code Summary**:
+- **Line 4**: Valuation date set to 2016-02-05
+- **Lines 5-6**: Input files in `Input/` directory, outputs to `Output/cvasensi/amc_legacy/`
+- **Lines 7-8**: Logging configuration (log.txt with verbosity level 31)
+- **Lines 9-10**: Market data and historical fixings from shared Examples/Input directory
+- **Lines 12-15**: Configuration files for curves, conventions, market setup, and pricing engines
+- **Line 16**: Portfolio contains a single 20-year EUR swap
+- **Line 19**: Single-threaded execution
+
+**Markets Section** (Lines 21-27):
 
 ```xml
   <Markets>
-    <!-- Line 22-26: Market configurations for different purposes -->
-    <Parameter name="lgmcalibration">collateral_inccy</Parameter>  <!-- LGM calibration market -->
-    <Parameter name="fxcalibration">xois_eur</Parameter>           <!-- FX calibration market -->
-    <Parameter name="pricing">xois_eur</Parameter>                 <!-- Pricing market -->
-    <Parameter name="simulation">xois_eur</Parameter>              <!-- Simulation market -->
-    <Parameter name="sensitivity">xois_eur</Parameter>             <!-- Sensitivity market -->
+    <Parameter name="lgmcalibration">collateral_inccy</Parameter>
+    <Parameter name="fxcalibration">xois_eur</Parameter>
+    <Parameter name="pricing">xois_eur</Parameter>
+    <Parameter name="simulation">xois_eur</Parameter>
+    <Parameter name="sensitivity">xois_eur</Parameter>
   </Markets>
 ```
 
-### Understanding Market Configurations
+**Code Summary**:
+- **Line 22**: LGM calibration uses OIS curves (risk-free rates) per currency
+- **Lines 23-26**: Pricing and simulation use EUR-collateralized discounting (XOIS EUR)
+- These configurations determine which yield curves are used for different purposes
 
-Market configurations define **which discount curves** to use for different purposes. This is crucial because the choice of discounting curve affects valuations.
+**Analytics Section** (Lines 28-65):
 
-#### Available Configurations
-
-See [Examples/Input/todaysmarket.xml](../../Examples/Input/todaysmarket.xml#L2-L26) for the full list:
-
-```xml
-<TodaysMarket>
-  <!-- Default: XOIS (cross-currency OIS) discounting with EUR collateral -->
-  <Configuration id="default">
-    <DiscountingCurvesId>xois_eur</DiscountingCurvesId>
-    <YieldCurvesId>xois_eur</YieldCurvesId>
-    <IndexForwardingCurvesId>default</IndexForwardingCurvesId>
-  </Configuration>
-
-  <!-- Collateral in-currency: OIS discounting in each currency -->
-  <Configuration id="collateral_inccy">
-    <DiscountingCurvesId>ois</DiscountingCurvesId>
-    <IndexForwardingCurvesId>default</IndexForwardingCurvesId>
-    <YieldCurvesId>ois</YieldCurvesId>
-  </Configuration>
-
-  <!-- XOIS EUR: Cross-currency OIS discounting w.r.t. EUR collateral -->
-  <Configuration id="xois_eur">
-    <DiscountingCurvesId>xois_eur</DiscountingCurvesId>
-    <IndexForwardingCurvesId>default</IndexForwardingCurvesId>
-  </Configuration>
-
-  <!-- XOIS USD: Cross-currency OIS discounting w.r.t. USD collateral -->
-  <Configuration id="xois_usd">
-    <DiscountingCurvesId>xois_usd</DiscountingCurvesId>
-    <IndexForwardingCurvesId>default</IndexForwardingCurvesId>
-  </Configuration>
-
-  <!-- LIBOR: In-currency swap discounting (legacy, pre-CSA) -->
-  <Configuration id="libor">
-    <DiscountingCurvesId>inccy_swap</DiscountingCurvesId>
-    <YieldCurvesId>inccy_swap</YieldCurvesId>
-    <IndexForwardingCurvesId>default</IndexForwardingCurvesId>
-  </Configuration>
-</TodaysMarket>
-```
-
-#### What Each Configuration Means
-
-| Configuration | Meaning | Use Case | Discounting |
-|---------------|---------|----------|-------------|
-| `collateral_inccy` | Collateral in-currency | CSA with collateral in each trade's currency | OIS curves per currency |
-| `xois_eur` | Cross-currency OIS EUR | CSA with EUR collateral for all trades | EUR OIS + FX basis |
-| `xois_usd` | Cross-currency OIS USD | CSA with USD collateral for all trades | USD OIS + FX basis |
-| `libor` | In-currency swap | No CSA (uncollateralized) | Swap curves (includes credit spread) |
-| `default` | Default configuration | Falls back to `xois_eur` | Same as xois_eur |
-
-#### Why This Matters for AMC Legacy
-
-In `ore_amc_legacy.xml:22-26`, we have:
-- **`lgmcalibration=collateral_inccy`**: Calibrate the LGM model using OIS curves (risk-free rates)
-- **`pricing=xois_eur`**: Price trades assuming EUR collateral (discounting at EUR OIS + FX basis)
-- **`simulation=xois_eur`**: Simulate future values using same discounting assumption
-
-**Key Point**: `xois_eur` means we discount all cashflows (even non-EUR) using EUR OIS + appropriate FX basis adjustments. This is correct for a portfolio with a EUR CSA.
-
-#### Acceptable Values
-
-The acceptable values are **any configuration ID defined in `todaysmarket.xml`**. Common ones:
-- `default`, `collateral_inccy`, `xois_eur`, `xois_usd`, `libor`
-- Custom configurations can be added to `todaysmarket.xml`
-
-#### How Configuration is Used in Code
-
-```cpp
-// When building a trade (e.g., in OREData/ored/portfolio/swap.cpp):
-std::string marketConfig = inputs_->marketConfig("pricing");  // "xois_eur"
-
-// Retrieve discount curve using this configuration
-auto discountCurve = market_->discountCurve("EUR", marketConfig);
-
-// This retrieves the EUR curve from the "xois_eur" configuration group
-// which points to the EUR-OIS curve (risk-free) rather than EUR-SWAP curve
-```
-
-**Historical Note**: Before CSA became standard, LIBOR/swap curves (which include bank credit spread) were used for discounting. Modern practice uses OIS curves (risk-free) when collateral is posted.
-
-#### 3.3 Analytics Section (Lines 28-65)
-
-The Analytics section defines which calculations to run in sequence.
-
-##### NPV Analytic (Lines 29-33)
-
-```xml
-    <Analytic type="npv">
-      <Parameter name="active">Y</Parameter>
-      <Parameter name="baseCurrency">EUR</Parameter>
-      <Parameter name="outputFileName">npv.csv</Parameter>
-    </Analytic>
-```
-
-**Purpose**: Calculate present value of all trades using today's market data.
-
-##### Cashflow Analytic (Lines 34-37)
-
-```xml
-    <Analytic type="cashflow">
-      <Parameter name="active">Y</Parameter>
-      <Parameter name="outputFileName">flows.csv</Parameter>
-    </Analytic>
-```
-
-**Purpose**: Generate detailed cashflow schedules for all trades.
-
-##### Simulation Analytic (Lines 44-54) - **THE KEY ANALYTIC**
+**Simulation Analytic** (Lines 44-54) - **THE KEY ANALYTIC**:
 
 ```xml
     <Analytic type="simulation">
-      <!-- Line 45: Enable simulation -->
       <Parameter name="active">Y</Parameter>
-
-      <!-- Line 46: Enable AMC (American Monte Carlo) -->
       <Parameter name="amc">Y</Parameter>
-
-      <!-- Line 48: AMC-CG mode = Disabled (use legacy AMC) -->
-      <!-- Options: Disabled (legacy), CubeGeneration (AMC-CG classic), Full (AMC-CG with CG pricing) -->
+      <!-- Disabled (legacy AMC), CubeGeneration (AMC-CG, classic PP), Full (AMC-CG, cg PP) -->
       <Parameter name="amcCg">Disabled</Parameter>
-
-      <!-- Line 49: Trade types eligible for AMC pricing -->
       <Parameter name="amcTradeTypes">Swap,ScriptedTrade</Parameter>
-
-      <!-- Line 50: Simulation parameters (grid, samples, model) -->
       <Parameter name="simulationConfigFile">simulation_xva.xml</Parameter>
-
-      <!-- Line 51: Standard pricing engines -->
       <Parameter name="pricingEnginesFile">pricingengine.xml</Parameter>
-
-      <!-- Line 52: AMC-specific pricing engines -->
       <Parameter name="amcPricingEnginesFile">pricingengine_amc.xml</Parameter>
-
-      <!-- Line 53: Base currency for aggregation -->
       <Parameter name="baseCurrency">EUR</Parameter>
     </Analytic>
 ```
 
-**Key Configuration**: `amcCg=Disabled` means we use the **legacy AMC** implementation, not the newer Computation Graph framework.
+**Code Summary**:
+- **Line 46**: AMC enabled (`amc=Y`)
+- **Line 48**: **`amcCg=Disabled`** - This is the key setting that activates **legacy AMC** mode
+- **Line 49**: Swap and ScriptedTrade instruments eligible for AMC pricing
+- **Lines 50-52**: Configuration files for simulation parameters and AMC-specific pricing engines
 
-##### XVA Analytic (Lines 55-64)
+**XVA Analytic** (Lines 55-64):
 
 ```xml
     <Analytic type="xva">
-      <!-- Line 56: Enable XVA calculation -->
       <Parameter name="active">Y</Parameter>
-
-      <!-- Line 57: Netting and CSA configuration -->
       <Parameter name="csaFile">netting.xml</Parameter>
-
-      <!-- Line 58: Base currency -->
       <Parameter name="baseCurrency">EUR</Parameter>
-
-      <!-- Line 59-60: Generate exposure profiles -->
       <Parameter name="exposureProfiles">Y</Parameter>
       <Parameter name="exposureProfilesByTrade">Y</Parameter>
-
-      <!-- Line 61: Quantile for PFE (Potential Future Exposure) -->
       <Parameter name="quantile">0.95</Parameter>
-
-      <!-- Line 62: CVA calculation type -->
       <Parameter name="calculationType">Symmetric</Parameter>
-
-      <!-- Line 63: Enable CVA calculation -->
       <Parameter name="cva">Y</Parameter>
     </Analytic>
 ```
+
+**Code Summary**:
+- **Lines 59-60**: Generate exposure profiles at both netting set and trade level
+- **Line 61**: PFE calculated at 95th percentile
+- **Line 63**: CVA calculation enabled
 
 ---
 
 ## 4. ORE Application Execution
 
-### Entry Point: App/ore.cpp
+### File: [OREAnalytics/orea/app/oreapp.cpp](../../OREAnalytics/orea/app/oreapp.cpp)
 
-When the ORE binary is executed with the XML file, it enters the main application.
+When the ORE binary is executed, it enters the main application loop.
 
+**Main Entry Point** (App/ore.cpp):
 ```cpp
-// App/ore.cpp (simplified flow)
 int main(int argc, char** argv) {
-    // Parse command line: ore Input/ore_amc_legacy.xml
     std::string inputFile = argv[1];  // "Input/ore_amc_legacy.xml"
-
-    // Create Parameters object and load XML
     auto params = boost::make_shared<Parameters>();
     params->fromFile(inputFile);      // Parse XML into parameter map
-
-    // Create OREApp with parameters
     auto app = boost::make_shared<OREApp>(params);
-
-    // Run all analytics
     app->run();                       // Main execution
-
     return 0;
 }
 ```
 
-### OREApp::run() Flow
-
-See [OREAnalytics/orea/app/oreapp.cpp](../../OREAnalytics/orea/app/oreapp.cpp#L435-L481)
+**OREApp::run()** ([oreapp.cpp:435-481](../../OREAnalytics/orea/app/oreapp.cpp#L435)):
 
 ```cpp
 void OREApp::run() {
-    // Line 438-446: Thread safety and cleanup
+    // Thread safety and cleanup
     static std::mutex _s_mutex;
     std::lock_guard<std::mutex> lock(_s_mutex);
     CleanUpThreadLocalSingletons cleanupThreadLocalSingletons;
     CleanUpThreadGlobalSingletons cleanupThreadGloablSingletons;
     CleanUpLogSingleton cleanupLogSingleton(clearLog_, true);
 
-    // Line 449-456: Initialize from parameters
+    // Initialize from parameters
     if (params_ != nullptr)
         initFromParams();             // Load all configuration files
 
-    // Line 464-471: Execute analytics
+    // Execute analytics
     try {
         analytics();                  // Run all configured analytics
     } catch (std::exception& e) {
@@ -460,30 +300,34 @@ void OREApp::run() {
         return;
     }
 
-    // Line 473-480: Report completion
+    // Report completion
     runTimer_.stop();
     CONSOLE("run time: " << runTimer_.format(default_places, "%w") << " sec");
     CONSOLE("ORE done.");
 }
 ```
 
-### initFromParams() - Load Configurations
+**Code Summary** ([oreapp.cpp:435-481](../../OREAnalytics/orea/app/oreapp.cpp#L435)):
+- **Lines 438-448**: Thread safety setup with mutex locks and singleton cleanup handlers
+- **Lines 449-456**: `initFromParams()` loads all XML configuration files into memory
+- **Lines 464-471**: `analytics()` executes all configured analytics in sequence
+- **Lines 473-480**: Reports execution time and completes
 
-See [OREAnalytics/orea/app/oreapp.cpp](../../OREAnalytics/orea/app/oreapp.cpp#L345-L407)
+**initFromParams()** ([oreapp.cpp:345-407](../../OREAnalytics/orea/app/oreapp.cpp#L345)):
 
 ```cpp
 void OREApp::initFromParams() {
-    // Line 346-349: Extract output path
+    // Extract output path
     outputPath_ = params_->get("setup", "outputPath");  // "Output/cvasensi/amc_legacy"
 
-    // Line 350-355: Setup logging
+    // Setup logging
     logFile_ = outputPath_ + "/" + params_->get("setup", "logFile");  // "log.txt"
     logMask_ = 31;  // From XML
 
-    // Line 392-393: Initialize logging
+    // Initialize logging
     setupLog(logMask_, outputPath_, logFile_, ...);
 
-    // Line 399-402: Load all input files
+    // Load all input files
     CONSOLEW("Loading inputs");
     inputs_ = make_shared<OREAppInputParameters>(params_);
     inputs_->loadParameters();        // Loads ALL referenced files:
@@ -497,54 +341,64 @@ void OREApp::initFromParams() {
                                       // - fixings_20160205.txt
     CONSOLE("OK");
 
-    // Line 405: Set global evaluation date
+    // Set global evaluation date
     Settings::instance().evaluationDate() = inputs_->asof();  // 2016-02-05
 }
 ```
 
-### analytics() - Run All Analytics
+**Code Summary** ([oreapp.cpp:345-407](../../OREAnalytics/orea/app/oreapp.cpp#L345)):
+- **Line 346**: Extracts output path from XML parameters
+- **Lines 350-355**: Sets up logging to file with verbosity level
+- **Lines 392-393**: Initializes log system
+- **Lines 399-402**: **Loads all input files** - portfolio, market data, configurations
+- **Line 405**: Sets QuantLib's global evaluation date to the asof date
 
-See [OREAnalytics/orea/app/oreapp.cpp](../../OREAnalytics/orea/app/oreapp.cpp#L234-L273)
+**analytics()** ([oreapp.cpp:234-273](../../OREAnalytics/orea/app/oreapp.cpp#L234)):
 
 ```cpp
 void OREApp::analytics() {
     LOG("ORE analytics starting");
 
-    // Line 242: Set evaluation date
+    // Set evaluation date
     Settings::instance().evaluationDate() = inputs_->asof();  // 2016-02-05
 
-    // Line 247: Initialize conventions
+    // Initialize conventions
     InstrumentConventions::instance().setConventions(inputs_->conventions());
 
-    // Line 249-256: Create market data loader
+    // Create market data loader
     auto csvLoader = buildCsvLoader(params_);  // Reads market_20160205.txt, fixings_20160205.txt
     auto loader = make_shared<MarketDataCsvLoader>(inputs_, csvLoader);
 
-    // Line 258-259: Create analytics manager
+    // Create analytics manager
     analyticsManager_ = make_shared<AnalyticsManager>(inputs_, loader);
     analyticsManager_->initialise();  // Create analytic objects from XML
 
-    // Line 273: Run all analytics
+    // Run all analytics
     analyticsManager_->runAnalytics(mcr);
 }
 ```
 
+**Code Summary** ([oreapp.cpp:234-273](../../OREAnalytics/orea/app/oreapp.cpp#L234)):
+- **Line 242**: Sets QuantLib's global evaluation date
+- **Line 247**: Loads instrument conventions (day count, calendars, etc.)
+- **Lines 249-256**: Creates market data loader from CSV files
+- **Lines 258-259**: **Creates AnalyticsManager** which parses XML and instantiates analytic objects
+- **Line 273**: **Executes all analytics** in sequence (NPV → Cashflow → Simulation → XVA)
+
 ---
 
-## 5. Simulation Analytic Setup
+## 5. XVA Analytic Implementation
 
-The Simulation analytic is actually a **sub-analytic** of the XVA analytic. When `type="xva"` is configured with simulation enabled, it runs the simulation first.
+### File: [OREAnalytics/orea/app/analytics/xvaanalytic.hpp](../../OREAnalytics/orea/app/analytics/xvaanalytic.hpp)
 
-### XvaAnalytic Initialization
-
-See [OREAnalytics/orea/app/analytics/xvaanalytic.hpp](../../OREAnalytics/orea/app/analytics/xvaanalytic.hpp#L32-L106)
+**Class Definition** ([xvaanalytic.hpp:32-106](../../OREAnalytics/orea/app/analytics/xvaanalytic.hpp#L32)):
 
 ```cpp
 class XvaAnalyticImpl : public Analytic::Impl {
 public:
     static constexpr const char* LABEL = "XVA";
 
-    // Line 36-42: Constructor
+    // Constructor
     explicit XvaAnalyticImpl(
         const shared_ptr<InputParameters>& inputs,
         const shared_ptr<Scenario>& offsetScenario = nullptr,
@@ -555,12 +409,12 @@ public:
         setLabel(LABEL);
     }
 
-    // Line 43-44: Main execution method
+    // Main execution method
     virtual void runAnalytic(const shared_ptr<ore::data::InMemoryLoader>& loader,
                              const std::set<std::string>& runTypes = {}) override;
 
 protected:
-    // Line 84-102: Member variables
+    // Key member variables
     shared_ptr<ScenarioSimMarket> simMarket_;               // Market for simulation
     shared_ptr<ScenarioSimMarket> simMarketCalibration_;    // Market for calibration
     shared_ptr<EngineFactory> engineFactory_;               // Pricing engines
@@ -576,192 +430,40 @@ protected:
     bool runSimulation_ = false;                            // Run simulation?
     bool runXva_ = false;                                   // Run XVA?
     bool runPFE_ = false;                                   // Run PFE?
+
+    // Methods
+    void buildScenarioSimMarket();
+    void buildCrossAssetModel(bool continueOnError);
+    void buildScenarioGenerator(bool continueOnError);
+    void amcRun(bool doClassicRun);
+    void runPostProcessor();
 };
 ```
 
-### Configuration Files Referenced
+**Code Summary** ([xvaanalytic.hpp:32-106](../../OREAnalytics/orea/app/analytics/xvaanalytic.hpp#L32)):
+- **Lines 32-42**: Class declaration inheriting from `Analytic::Impl`
+- **Lines 43-44**: `runAnalytic()` is the main entry point for XVA calculations
+- **Lines 84-102**: **Key member variables** including:
+  - `simMarket_`: Scenario-based market that updates for each Monte Carlo path
+  - `model_`: Cross-Asset Model (typically LGM for interest rates)
+  - `scenarioGenerator_`: Generates Monte Carlo scenarios
+  - `amcCube_`: Stores NPV values for all (trade, date, scenario) combinations
+  - `postProcess_`: Computes EPE and CVA from the cube
 
-#### simulation_xva.xml (Lines 3-12)
-
-See [Examples/Performance/Input/simulation_xva.xml](../../Examples/Performance/Input/simulation_xva.xml#L3-L12)
-
-```xml
-<Simulation>
-  <Parameters>
-    <!-- Line 4: Simulation grid = 528 steps, 2-week tenor = ~20 years -->
-    <Grid>528,2W</Grid>
-
-    <!-- Line 5: Calendar for date adjustments -->
-    <Calendar>EUR,USD,GBP,CHF</Calendar>
-
-    <!-- Line 6: Random number generator -->
-    <Sequence>Burley2020SobolBrownianBridge</Sequence>
-
-    <!-- Line 7: Scenario type -->
-    <Scenario>Simple</Scenario>
-
-    <!-- Line 8: Random seed for reproducibility -->
-    <Seed>42</Seed>
-
-    <!-- Line 9: Number of Monte Carlo paths -->
-    <Samples>8192</Samples>
-
-    <!-- Line 10: Day count convention -->
-    <DayCounter>A365F</DayCounter>
-  </Parameters>
-```
-
-**Simulation Grid**: 528 steps × 2 weeks = 1056 weeks ≈ 20.3 years
-
-#### pricingengine_amc.xml (Lines 30-48)
-
-See [Examples/Performance/Input/pricingengine_amc.xml](../../Examples/Performance/Input/pricingengine_amc.xml#L30-L48)
-
-```xml
-  <!-- Line 30: Swap pricing using AMC engine -->
-  <Product type="Swap">
-    <Model>CrossAssetModel</Model>
-    <ModelParameters/>
-    <Engine>AMC</Engine>
-    <EngineParameters>
-      <!-- Line 35-37: Training paths (for regression) -->
-      <Parameter name="Training.Sequence">MersenneTwisterAntithetic</Parameter>
-      <Parameter name="Training.Seed">42</Parameter>
-      <Parameter name="Training.Samples">8192</Parameter>
-
-      <!-- Line 38-40: Pricing paths (set to 0 = reuse training paths) -->
-      <Parameter name="Pricing.Sequence">SobolBrownianBridge</Parameter>
-      <Parameter name="Pricing.Seed">17</Parameter>
-      <Parameter name="Pricing.Samples">0</Parameter>
-
-      <!-- Line 41-42: Regression basis functions -->
-      <Parameter name="Training.BasisFunction">Monomial</Parameter>
-      <Parameter name="Training.BasisFunctionOrder">6</Parameter>
-
-      <!-- Line 43-44: Random number generation settings -->
-      <Parameter name="BrownianBridgeOrdering">Steps</Parameter>
-      <Parameter name="SobolDirectionIntegers">JoeKuoD7</Parameter>
-
-      <!-- Line 45-46: Additional settings -->
-      <Parameter name="MinObsDate">true</Parameter>
-      <Parameter name="RegressionOnExerciseOnly">false</Parameter>
-    </EngineParameters>
-  </Product>
-```
-
-**AMC Engine**: Uses regression on polynomial basis functions to estimate continuation values at each simulation step.
+**Main Workflow Methods**:
+- `buildScenarioSimMarket()`: Creates market objects for simulation
+- `buildCrossAssetModel()`: Calibrates LGM model to swaption volatilities
+- `buildScenarioGenerator()`: Sets up Monte Carlo path generation
+- `amcRun()`: **Executes AMC simulation loop**
+- `runPostProcessor()`: **Calculates exposures and CVA**
 
 ---
 
-## 6. AMC Legacy Framework
+## 6. NPV Cube Structure
 
-### What is AMC?
+### File: [OREAnalytics/orea/cube/npvcube.hpp](../../OREAnalytics/orea/cube/npvcube.hpp)
 
-**American Monte Carlo (AMC)** is a technique to price path-dependent derivatives and generate exposure profiles using Monte Carlo simulation combined with regression.
-
-**Key Concept**: At each future date, estimate the **continuation value** (value of keeping the trade alive) using regression on simulated paths.
-
-### AMC Legacy vs AMC-CG
-
-| Feature | AMC Legacy | AMC-CG (Computation Graph) |
-|---------|-----------|---------------------------|
-| **Implementation** | Direct C++ calculation | Uses Computation Graph abstraction |
-| **AAD Support** | No | Yes (via tape recording) |
-| **GPU Support** | No | Yes (via external compute devices) |
-| **Performance** | Fast for simple portfolios | Slower due to abstraction overhead |
-| **Use Case** | Benchmark, production for simple cases | Advanced analytics, sensitivities |
-
-### AMC Regression Process
-
-For a swap at future time `t`:
-
-1. **Simulate Paths**: Generate 8192 scenarios of future interest rates
-2. **Compute Payoffs**: Calculate swap value at time `t+dt` on each path
-3. **Regression**: Fit polynomial to relate state variables to values
-   ```
-   V(t) ≈ β₀ + β₁·r(t) + β₂·r(t)² + β₃·r(t)³ + ...
-   ```
-4. **Continuation Value**: Use regression to estimate `E[V(t+dt) | state(t)]`
-5. **Store in Cube**: Save exposure for this time/scenario
-
-### Regression Basis Functions
-
-From `pricingengine_amc.xml:41-42`:
-- **Monomial** basis: `{1, x, x², x³, x⁴, x⁵, x⁶}`
-- State variables: Interest rate levels, potentially FX rates
-- Order 6 provides good accuracy for vanilla swaps
-
----
-
-## 7. Cross-Asset Model Calibration
-
-Before simulating, ORE calibrates a **Cross-Asset Model (CAM)** to match market volatilities.
-
-### LGM Calibration
-
-See [Examples/Performance/Input/simulation_xva.xml](../../Examples/Performance/Input/simulation_xva.xml#L19-L45)
-
-```xml
-    <InterestRateModels>
-      <!-- Line 20: Linear Gaussian Model (LGM) for EUR -->
-      <LGM ccy="default">
-        <!-- Line 21: Calibration method -->
-        <CalibrationType>Bootstrap</CalibrationType>
-
-        <!-- Line 22-28: Volatility parameters -->
-        <Volatility>
-          <Calibrate>Y</Calibrate>                      <!-- Calibrate to market -->
-          <VolatilityType>Hagan</VolatilityType>        <!-- Hagan's formula -->
-          <ParamType>Piecewise</ParamType>              <!-- Piecewise constant -->
-          <TimeGrid>1.0, 2.0, 3.0, 4.0, 5.0, 7.0, 10.0</TimeGrid>  <!-- 8 periods -->
-          <InitialValue>0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01</InitialValue>
-        </Volatility>
-
-        <!-- Line 29-35: Reversion parameters -->
-        <Reversion>
-          <Calibrate>N</Calibrate>                      <!-- Fixed reversion -->
-          <ReversionType>HullWhite</ReversionType>
-          <ParamType>Constant</ParamType>
-          <TimeGrid/>
-          <InitialValue>0.0</InitialValue>              <!-- Zero mean reversion -->
-        </Reversion>
-
-        <!-- Line 36-40: Calibration instruments -->
-        <CalibrationSwaptions>
-          <!-- Expiry: When swaption expires, Term: Underlying swap tenor -->
-          <Expiries> 1Y,  2Y,  3Y, 4Y,  5Y, 6Y, 7Y, 8Y, 9Y, 10Y, 11Y, 12Y, 13Y, 14Y, 15Y, 16Y, 17Y, 18Y, 19Y</Expiries>
-          <Terms>   19Y, 18Y, 17Y, 16Y, 15Y, 14Y, 13Y, 12Y, 11y, 10Y, 9Y, 8Y, 7Y, 6Y, 5Y, 4Y, 3Y, 2Y, 1Y</Terms>
-          <Strikes/>  <!-- Empty = ATM swaptions -->
-        </CalibrationSwaptions>
-      </LGM>
-    </InterestRateModels>
-```
-
-**Calibration Process**:
-1. Read swaption volatilities from market data
-2. For each time bucket (1Y, 2Y, ..., 10Y):
-   - Price ATM swaption with current LGM parameters
-   - Adjust volatility parameter to match market vol
-   - Move to next bucket (bootstrap)
-3. Result: LGM model that reprices all calibration swaptions correctly
-
-### Why Calibrate to Swaptions?
-
-- Swaptions capture market's view of **future interest rate volatility**
-- Exposure profiles depend on realistic rate dynamics
-- Calibrated model produces scenarios consistent with market expectations
-
----
-
-## 8. Exposure Simulation
-
-### What is the NPV Cube?
-
-The **NPV Cube** is ORE's primary data structure for storing trade valuations across time and scenarios.
-
-#### Cube Structure
-
-See [OREAnalytics/orea/cube/npvcube.hpp](../../OREAnalytics/orea/cube/npvcube.hpp#L39-L69)
+**NPVCube Base Class** ([npvcube.hpp:38-135](../../OREAnalytics/orea/cube/npvcube.hpp#L38)):
 
 ```cpp
 //! NPV Cube class stores both future and current NPV values.
@@ -796,7 +498,14 @@ public:
 };
 ```
 
-#### Cube Dimensions for AMC Legacy Example
+**Code Summary** ([npvcube.hpp:38-135](../../OREAnalytics/orea/cube/npvcube.hpp#L38)):
+- **Lines 39-52**: Documentation explaining the 4-dimensional structure
+- **Lines 66-69**: Dimension accessors (number of IDs, dates, samples, depth)
+- **Lines 98-100**: **Core methods** for getting/setting values by numeric indices
+- **Lines 103-109**: Convenience methods using trade IDs and dates instead of indices
+- The cube allows O(1) access to any valuation: `cube->get("Swap_20", date, scenario)`
+
+**Cube Dimensions for AMC Legacy Example**:
 
 ```
 Trade IDs:     1 trade  ("Swap_20")
@@ -808,10 +517,10 @@ Total values:  1 × 528 × 8192 × 1 = 4,325,376 floating-point numbers
 Memory:        ~35 MB (assuming 8 bytes per double)
 ```
 
-#### How Values are Stored
+**How Values are Stored During Simulation**:
 
 ```cpp
-// During AMC simulation (simplified):
+// During AMC simulation (conceptual code):
 for (size_t dateIdx = 0; dateIdx < 528; ++dateIdx) {
     Date simDate = dates[dateIdx];
 
@@ -829,509 +538,105 @@ for (size_t dateIdx = 0; dateIdx < 528; ++dateIdx) {
 }
 ```
 
-#### Accessing Cube Data
-
-```cpp
-// Get swap NPV at time index 10, scenario 42
-Real npv = amcCube_->get("Swap_20", dates[10], 42, 0);
-
-// Calculate EPE at time index 10
-Real epe = 0.0;
-for (size_t s = 0; s < 8192; ++s) {
-    Real npv_s = amcCube_->get("Swap_20", dates[10], s, 0);
-    epe += std::max(npv_s, 0.0);  // Sum positive exposures
-}
-epe /= 8192.0;  // Average over scenarios
-```
-
-**Key Point**: The cube allows efficient storage and retrieval of millions of valuations without recalculating. Post-processing (EPE, CVA) reads from the cube rather than re-pricing trades.
-
 ---
 
-### Portfolio Definition
+## 7. Exposure Calculation
 
-See [Examples/Performance/Input/portfolio_cvasensi.xml](../../Examples/Performance/Input/portfolio_cvasensi.xml#L3-L73)
+### File: [OREAnalytics/orea/aggregation/exposurecalculator.cpp](../../OREAnalytics/orea/aggregation/exposurecalculator.cpp)
 
-```xml
-<Portfolio>
-  <!-- Line 3: Single 20-year EUR swap -->
-  <Trade id="Swap_20">
-    <TradeType>Swap</TradeType>
-    <Envelope>
-      <!-- Line 6-7: Counterparty and netting set -->
-      <CounterParty>CPTY_A</CounterParty>
-      <NettingSetId>CPTY_A</NettingSetId>
-    </Envelope>
-    <SwapData>
-      <!-- Line 11-39: Fixed leg (receive 2% annually) -->
-      <LegData>
-        <LegType>Fixed</LegType>
-        <Payer>false</Payer>                        <!-- Receive fixed -->
-        <Currency>EUR</Currency>
-        <Notionals><Notional>10000000.000000</Notional></Notionals>
-        <DayCounter>30/360</DayCounter>
-        <FixedLegData><Rates><Rate>0.02</Rate></Rates></FixedLegData>
-        <ScheduleData>
-          <Rules>
-            <StartDate>20151028</StartDate>         <!-- ~3 months before asof -->
-            <EndDate>20351028</EndDate>             <!-- 20 years from start -->
-            <Tenor>1Y</Tenor>                       <!-- Annual payments -->
-            <Calendar>TARGET</Calendar>
-            <Convention>F</Convention>
-          </Rules>
-        </ScheduleData>
-      </LegData>
+**ExposureCalculator::build()** ([exposurecalculator.cpp:72-200](../../OREAnalytics/orea/aggregation/exposurecalculator.cpp#L72)):
 
-      <!-- Line 40-71: Floating leg (pay EUR-EURIBOR-6M) -->
-      <LegData>
-        <LegType>Floating</LegType>
-        <Payer>true</Payer>                         <!-- Pay floating -->
-        <Currency>EUR</Currency>
-        <Notionals><Notional>10000000.000000</Notional></Notionals>
-        <DayCounter>A360</DayCounter>
-        <FloatingLegData>
-          <Index>EUR-EURIBOR-6M</Index>
-          <Spreads><Spread>0.000000</Spread></Spreads>
-        </FloatingLegData>
-        <ScheduleData>
-          <Rules>
-            <StartDate>20151028</StartDate>
-            <EndDate>20351028</EndDate>
-            <Tenor>6M</Tenor>                       <!-- Semi-annual payments -->
-            <Calendar>TARGET</Calendar>
-            <Convention>MF</Convention>
-          </Rules>
-        </ScheduleData>
-      </LegData>
-    </SwapData>
-  </Trade>
-</Portfolio>
-```
-
-**Trade Summary**:
-- **Type**: Vanilla interest rate swap
-- **Notional**: EUR 10,000,000
-- **Start**: 2015-10-28 (before asof 2016-02-05)
-- **Maturity**: 2035-10-28 (20 years from start)
-- **Receive**: Fixed 2% annually (30/360)
-- **Pay**: EUR-EURIBOR-6M semi-annually (Act/360)
-
-### Simulation Process
-
-The simulation runs in [OREAnalytics/orea/app/analytics/xvaanalytic.cpp](../../OREAnalytics/orea/app/analytics/xvaanalytic.cpp):
+This method reads the NPV cube and calculates exposure metrics (EPE, ENE, PFE) for each trade and date.
 
 ```cpp
-void XvaAnalyticImpl::runAnalytic(const shared_ptr<InMemoryLoader>& loader,
-                                  const std::set<std::string>& runTypes) {
-    LOG("Running XVA analytic.");
-
-    // STEP 1: Build scenario simulation market
-    buildScenarioSimMarket();         // Create market for each scenario
-
-    // STEP 2: Build and calibrate Cross-Asset Model
-    buildCrossAssetModel(false);      // Calibrate LGM to swaptions
-
-    // STEP 3: Build scenario generator
-    buildScenarioGenerator(false);    // Create Monte Carlo path generator
-
-    // STEP 4: Initialize exposure cube
-    initCube(cube_, portfolio_->ids(), cubeDepth_);  // 528 dates × 8192 samples × trades
-
-    // STEP 5: Run AMC simulation
-    if (inputs_->amc()) {
-        amcRun(doClassicRun);         // AMC-specific simulation
-    } else {
-        classicRun(portfolio_);       // Standard simulation
-    }
-
-    // STEP 6: Run XVA post-processor
-    runPostProcessor();               // Compute CVA from exposures
-}
-```
-
-### AMC Run Details
-
-```cpp
-void XvaAnalyticImpl::amcRun(bool doClassicRun) {
-    // Build AMC portfolio
-    buildAmcPortfolio();              // Classify trades as AMC-eligible
-
-    // Create AMC engine factory
-    auto amcEngineFactory = amcEngineFactory(model_, simDates, stickyCloseOutDates);
-
-    // Build AMC trades
-    amcPortfolio_->build(amcEngineFactory);
-
-    // For each simulation date:
-    for (size_t i = 0; i < simDates.size(); ++i) {
-        Date simDate = simDates[i];
-
-        // For each scenario (path):
-        for (size_t j = 0; j < samples_; ++j) {
-            // Update market to scenario j at date i
-            simMarket_->update(simDate, j);
-
-            // For each AMC trade:
-            for (auto& trade : amcPortfolio_->trades()) {
-                // Price trade using AMC engine (with regression)
-                Real npv = trade->instrument()->NPV();
-
-                // Store in cube
-                amcCube_->set(npv, trade->id(), i, j);
-            }
-        }
-    }
-}
-```
-
-### What Does simMarket_->update(simDate, sample) Do?
-
-The `ScenarioSimMarket` is a special market implementation that can be updated to reflect different future scenarios.
-
-#### ScenarioSimMarket Overview
-
-See [OREAnalytics/orea/scenario/scenariosimmarket.hpp](../../OREAnalytics/orea/scenario/scenariosimmarket.hpp#L64-L150)
-
-```cpp
-//! Simulation Market updated with discrete scenarios
-/*! ScenarioSimMarket wraps a TodaysMarket and overlays it with scenario-specific
- *  risk factor values. When update() is called, all market objects (yield curves,
- *  FX rates, volatilities) are adjusted to reflect the scenario's risk factors.
- */
-class ScenarioSimMarket : public SimMarket {
-public:
-    //! Update market to a specific date and scenario
-    virtual void preUpdate() override;
-    virtual void updateScenario(const Date&) override;
-    virtual void updateDate(const Date&) override;
-    virtual void postUpdate(const Date& d, bool withFixings) override;
-
-    //! Apply a scenario (set of risk factor shocks)
-    void applyScenario(const shared_ptr<Scenario>& scenario);
-};
-```
-
-#### The update() Call Sequence
-
-When `simMarket_->update(date, sample)` is called during AMC simulation:
-
-**Step 1: Retrieve Scenario**
-```cpp
-// Get the pre-generated scenario for this (date, sample) combination
-auto scenario = scenarioGenerator_->next(date, sample);
-// scenario contains: { EUR-DISCOUNT-10Y: 0.0234, EUR-EURIBOR-6M-5Y: 0.0189, ... }
-```
-
-**Step 2: Apply Scenario to Market**
-```cpp
-void ScenarioSimMarket::applyScenario(const shared_ptr<Scenario>& scenario) {
-    // For each risk factor in the scenario:
-    for (auto& [key, value] : scenario->data()) {
-        // Example: key = RiskFactorKey("DiscountCurve/EUR/10Y")
-        //          value = 0.0234 (simulated zero rate)
-
-        // Update the corresponding market object
-        switch (key.keytype) {
-        case RiskFactorKey::KeyType::DiscountCurve:
-            // Update the discount curve for EUR at 10Y maturity
-            simData_[key] = value;  // Store for curve rebuilding
-            break;
-
-        case RiskFactorKey::KeyType::IndexCurve:
-            // Update index (EURIBOR) forecast curve
-            simData_[key] = value;
-            break;
-
-        case RiskFactorKey::KeyType::FXSpot:
-            // Update FX spot rate
-            fxSpots_[key.name]->setValue(value);
-            break;
-
-        case RiskFactorKey::KeyType::SwaptionVolatility:
-            // Update swaption volatility surface
-            simData_[key] = value;
-            break;
-        // ... other risk factor types
-        }
-    }
-
-    // Rebuild curves from updated risk factors
-    rebuildCurves();  // Reconstruct yield curves from simulated points
-}
-```
-
-**Step 3: Rebuild Market Objects**
-```cpp
-void ScenarioSimMarket::rebuildCurves() {
-    // For each simulated currency:
-    for (auto& ccy : currencies_) {
-        // Collect simulated discount factors
-        std::vector<Date> pillars = { ... };  // Tenors from simulation config
-        std::vector<Real> discountFactors;
-
-        for (auto& pillar : pillars) {
-            RiskFactorKey key("DiscountCurve", ccy, pillarToString(pillar));
-            discountFactors.push_back(simData_[key]);
-        }
-
-        // Reconstruct yield curve from simulated discount factors
-        auto curve = make_shared<InterpolatedDiscountCurve>(
-            pillars, discountFactors, dayCounter_);
-
-        // Replace the curve in the market
-        yieldCurves_[ccy] = curve;
-    }
-}
-```
-
-**Step 4: Update Evaluation Date (for fixings)**
-```cpp
-void ScenarioSimMarket::updateDate(const Date& d) {
-    // Set QuantLib's global evaluation date
-    Settings::instance().evaluationDate() = d;
-
-    // Apply fixings for this date (if available)
-    fixingManager_->applyFixings(d);
-}
-```
-
-#### Example: Updating for Date=2018-02-19, Sample=42
-
-```cpp
-// Scenario 42 at date 2018-02-19 contains:
-Scenario scenario42_20180219 = {
-    RiskFactorKey("DiscountCurve/EUR/1Y"):  0.9980,  // DF for 1Y
-    RiskFactorKey("DiscountCurve/EUR/5Y"):  0.9850,  // DF for 5Y
-    RiskFactorKey("DiscountCurve/EUR/10Y"): 0.9650,  // DF for 10Y
-    RiskFactorKey("IndexCurve/EUR-EURIBOR-6M/5Y"): 0.0189,  // Forward rate
-    // ... etc
-};
-
-// Call update
-simMarket_->update(Date(19, Feb, 2018), 42);
-
-// What happens internally:
-// 1. Retrieve scenario42_20180219 from scenario generator
-// 2. Set EUR discount curve points to { 0.9980, 0.9850, 0.9650, ... }
-// 3. Interpolate between points to create full yield curve
-// 4. Set EUR-EURIBOR-6M forecast curve from index curve risk factors
-// 5. Set evaluation date to 2018-02-19
-// 6. Apply historical fixings up to 2018-02-19
-
-// Now when we price the swap:
-Real npv = swap->NPV();  // Uses updated curves → scenario-specific valuation
-```
-
-**Key Insight**: Each `update()` call completely transforms the market to reflect a specific future state. This allows the same trade object to be repriced 8192 times (once per scenario) at each of 528 dates, without rebuilding trades.
-
-**NPV Cube Structure**:
-```
-Dimensions: [Trade ID][Date Index][Scenario Index]
-Size: 1 trade × 528 dates × 8192 scenarios = 4,325,376 values
-Storage: ~35 MB (assuming 8 bytes per double)
-```
-
----
-
-## 9. XVA Calculation - PostProcess
-
-After exposure simulation, the XVA analytic computes credit adjustments using the `PostProcess` class.
-
-### PostProcess Class Overview
-
-See [OREAnalytics/orea/aggregation/postprocess.hpp](../../OREAnalytics/orea/aggregation/postprocess.hpp#L49-L93)
-
-```cpp
-//! Exposure Aggregation and XVA Calculation
-/*!
-  This class aggregates NPV cube data, computes exposure statistics
-  and various XVAs, all at trade and netting set level:
-
-  1) Exposures
-  - Expected Positive Exposure, EPE: E[max(NPV(t),0) / N(t)]
-  - Expected Negative Exposure, ENE: E[max(-NPV(t),0) / N(t)]
-  - Basel Expected Exposure, EE_B: EPE(t)/P(t)
-  - Potential Future Exposure, PFE: q-Quantile of the distribution
-
-  2) Dynamic Initial Margin via regression
-
-  3) XVAs:
-  - Credit Value Adjustment, CVA
-  - Debit Value Adjustment, DVA
-  - Funding Value Adjustment, FVA
-  - Collateral Value Adjustment, COLVA
-  - Margin Value Adjustment, MVA
-
-  4) Allocation from netting set to trade level
-  - CVA and DVA
-  - EPE and ENE
-*/
-class PostProcess {
-public:
-    PostProcess(
-        const shared_ptr<Portfolio>& portfolio,
-        const shared_ptr<NettingSetManager>& nettingSetManager,
-        const shared_ptr<Market>& market,
-        const string& configuration,
-        const shared_ptr<NPVCube>& cube,        // Input: Exposure cube from simulation
-        const shared_ptr<AggregationScenarioData>& scenarioData,
-        const map<string, bool>& analytics,
-        const string& baseCurrency,
-        Real quantile = 0.95,
-        const string& calculationType = "Symmetric",
-        // ... many other parameters
-    );
-
-    // Accessors for computed results
-    Real tradeCva(const string& tradeId);
-    Real tradeDva(const string& tradeId);
-    Real nettingSetCva(const string& nettingSetId);
-    Real tradeEPE(const string& tradeId);
-    Real nettingSetEPE(const string& nettingSetId);
-};
-```
-
-### Where EPE is Calculated
-
-EPE (Expected Positive Exposure) is calculated in the PostProcess constructor.
-
-See [OREAnalytics/orea/aggregation/postprocess.cpp](../../OREAnalytics/orea/aggregation/postprocess.cpp#L137-L269)
-
-```cpp
-PostProcess::PostProcess(...) {
-    LOG("PostProcess: started.");
-
-    // STEP 1: Create exposure calculator for individual trades
-    // Line 137-151
-    exposureCalculator_ = make_shared<ExposureCalculator>(
-        portfolio_, cube_, baseCurrency_, market_,
-        cubeInterpretation_, scenarioData_, quantile_);
-
-    // STEP 2: Calculate trade-level exposures (EPE, ENE, PFE)
-    // This loops through the cube and computes statistics
-    exposureCalculator_->build();
-
-    // STEP 3: Create netting set exposure calculator
-    // Line 151-159
-    nettedExposureCalculator_ = make_shared<NettedExposureCalculator>(
-        portfolio_, market_, cube_, baseCurrency_,
-        configuration_, quantile_, ...);
-
-    // STEP 4: Calculate netting set exposures
-    nettedExposureCalculator_->build();
-
-    // STEP 5: Cache EPE values
-    // Line 266-276
-    for (const auto& tradeId : portfolio_->ids()) {
-        tradeEPE_[tradeId] = exposureCalculator_->epe(tradeId);
-        allocatedTradeEPE_[tradeId] = exposureCalculator_->allocatedEpe(tradeId);
-    }
-
-    for (const auto& nettingSetId : nettingSetIds()) {
-        netEPE_[nettingSetId] = nettedExposureCalculator_->epe(nettingSetId);
-    }
-}
-```
-
-#### EPE Calculation Implementation
-
-The actual EPE calculation happens in `ExposureCalculator::build()`:
-
-```cpp
-// In OREAnalytics/orea/aggregation/exposurecalculator.cpp
 void ExposureCalculator::build() {
-    Size numDates = cube_->numDates();
-    Size numSamples = cube_->samples();
+    LOG("Compute trade exposure profiles, " <<
+        (flipViewXVA_ ? "inverted (flipViewXVA = Y)" : "regular (flipViewXVA = N)"));
 
-    for (const auto& [tradeId, tradeIdx] : cube_->idsAndIndexes()) {
+    const Date today = market_->asofDate();
+    const DayCounter dc = ActualActual(ActualActual::ISDA);
+
+    vector<Real> times(cube_->dates().size(), 0.0);
+    vector<Real> timeDeltas(cube_->dates().size(), 0.0);
+    for (Size i = 0; i < cube_->dates().size(); i++) {
+        times[i] = dc.yearFraction(today, cube_->dates()[i]);
+        timeDeltas[i] = times[i] - (i > 0 ? times[i - 1] : 0.0);
+    }
+
+    // For each trade in the portfolio
+    for (auto const& [tradeId, trade] : portfolio_->trades()) {
+        string nettingSetId = trade->envelope().nettingSetId();
+        std::size_t i = cube_->getTradeIndex(tradeId);
+        LOG("Aggregate exposure for trade " << tradeId);
+
+        // Initialize netting set aggregation vectors
+        if (nettingSetDefaultValue_.find(nettingSetId) == nettingSetDefaultValue_.end()) {
+            nettingSetDefaultValue_[nettingSetId] =
+                vector<vector<Real>>(dates_.size(), vector<Real>(cube_->samples(), 0.0));
+            nettingSetCloseOutValue_[nettingSetId] =
+                vector<vector<Real>>(dates_.size(), vector<Real>(cube_->samples(), 0.0));
+            // ... additional netting set vectors
+        }
+
         // For each simulation date
-        for (Size dateIdx = 0; dateIdx < numDates; ++dateIdx) {
-            Date date = cube_->dates()[dateIdx];
-
-            // Accumulate positive and negative exposures across scenarios
-            Real sumPositive = 0.0;
-            Real sumNegative = 0.0;
-            std::vector<Real> exposures;  // For PFE quantile
+        for (Size j = 0; j < dates_.size(); ++j) {
+            Date d = cube_->dates()[j];
+            vector<Real> distribution(cube_->samples(), 0.0);
 
             // Loop over all Monte Carlo scenarios
-            for (Size sample = 0; sample < numSamples; ++sample) {
-                // Get NPV from cube
-                Real npv = cube_->get(tradeIdx, dateIdx, sample, 0);
+            for (Size k = 0; k < cube_->samples(); ++k) {
+                Real defaultValue = cubeInterpretation_->getDefaultNpv(cube_, i, j, k);
+                Real closeOutValue = cubeInterpretation_->getCloseOutNpv(cube_, i, j, k,
+                                                                          aggregationScenarioData_);
 
-                // Expected Positive Exposure
-                sumPositive += std::max(npv, 0.0);
+                // For single trade exposures, use default value
+                Real npv = exposureProfilesUseCloseOutValues_ ? closeOutValue : defaultValue;
 
-                // Expected Negative Exposure
-                sumNegative += std::max(-npv, 0.0);
+                // Accumulate positive and negative exposures
+                epe[j + 1] += std::max(npv, 0.0) / cube_->samples();  // Expected Positive Exposure
+                ene[j + 1] += std::max(-npv, 0.0) / cube_->samples(); // Expected Negative Exposure
 
-                // Store for quantile calculation
-                exposures.push_back(npv);
+                distribution[k] = npv;  // Store for PFE quantile calculation
             }
 
-            // EPE = average of positive exposures
-            Real epe = sumPositive / numSamples;
+            // Calculate PFE as quantile (e.g., 95th percentile)
+            std::sort(distribution.begin(), distribution.end());
+            Size pfeIdx = static_cast<Size>(quantile_ * cube_->samples());
+            pfe[j + 1] = distribution[pfeIdx];
 
-            // ENE = average of negative exposures
-            Real ene = sumNegative / numSamples;
-
-            // PFE = 95th percentile (or configured quantile)
-            std::sort(exposures.begin(), exposures.end());
-            Size pfeIdx = static_cast<Size>(quantile_ * numSamples);
-            Real pfe = exposures[pfeIdx];
-
-            // Store in exposure cube (internal data structure)
-            exposureCube_->set(epe, tradeId, date, 0, ExposureIndex::EPE);
-            exposureCube_->set(ene, tradeId, date, 0, ExposureIndex::ENE);
-            exposureCube_->set(pfe, tradeId, date, 0, ExposureIndex::PFE);
+            // Store in exposure cube
+            exposureCube_->set(epe[j + 1], tradeId, d, 0, ExposureIndex::EPE);
+            exposureCube_->set(ene[j + 1], tradeId, d, 0, ExposureIndex::ENE);
         }
     }
 }
 ```
+
+**Code Summary** ([exposurecalculator.cpp:72-200](../../OREAnalytics/orea/aggregation/exposurecalculator.cpp#L72)):
+- **Lines 73-82**: Converts cube dates to year fractions for time calculations
+- **Lines 89-98**: For each trade, initialize netting set aggregation data structures
+- **Lines 174-200**: **Main exposure calculation loop**:
+  - **Outer loop** (line 174): Iterate over simulation dates
+  - **Inner loop** (line 177): Iterate over Monte Carlo scenarios
+  - **Line 186-191**: Retrieve NPV from cube for this (trade, date, scenario)
+  - **Line 200**: **Calculate EPE** = average of max(NPV, 0) across all scenarios
+  - **Line 201**: **Calculate ENE** = average of max(-NPV, 0) across all scenarios
+  - **Lines 207-209**: Calculate PFE as the 95th percentile of the NPV distribution
+  - **Lines 172-173**: Store EPE/ENE in exposure cube for later CVA calculation
 
 **EPE Formula**:
 ```
-EPE(t) = (1/N) × Σ max(NPV_i(t), 0)
+EPE(t) = (1/N) × Σ_{i=1}^{N} max(NPV_i(t), 0)
 ```
-Where N = number of scenarios, NPV_i(t) = trade value in scenario i at time t.
+Where N = number of scenarios (8192), NPV_i(t) = trade value in scenario i at time t.
 
 ---
 
-### Where CVA is Calculated
+## 8. CVA Calculation
 
-CVA is calculated by the `ValueAdjustmentCalculator` (specifically `StaticCreditXvaCalculator` for static credit).
+### File: [OREAnalytics/orea/aggregation/staticcreditxvacalculator.cpp](../../OREAnalytics/orea/aggregation/staticcreditxvacalculator.cpp)
 
-See [OREAnalytics/orea/aggregation/staticcreditxvacalculator.cpp](../../OREAnalytics/orea/aggregation/staticcreditxvacalculator.cpp)
-
-```cpp
-// Called from PostProcess constructor, line 311-336
-void PostProcess::calculateXVA() {
-    // Create XVA calculator
-    auto xvaCalculator = make_shared<StaticCreditXvaCalculator>(
-        portfolio_, market_, configuration_, baseCurrency_,
-        dvaName_, fvaBorrowingCurve_, fvaLendingCurve_,
-        applyDynamicInitialMargin_, dimCalculator_,
-        exposureCalculator_->exposureCube(),  // Contains EPE/ENE time series
-        nettedExposureCalculator_->exposureCube(),
-        ExposureCalculator::ExposureIndex::allocatedEPE,  // Where to find EPE
-        ExposureCalculator::ExposureIndex::allocatedENE,  // Where to find ENE
-        NettedExposureCalculator::ExposureIndex::EPE,
-        NettedExposureCalculator::ExposureIndex::ENE
-    );
-
-    // Calculate CVA/DVA for all netting sets
-    xvaCalculator->build();
-
-    // Retrieve results
-    nettingSetCVA_ = xvaCalculator->nettingSetCva();
-    nettingSetDVA_ = xvaCalculator->nettingSetDva();
-    tradeCVA_ = xvaCalculator->tradeCva();
-    tradeDVA_ = xvaCalculator->tradeDva();
-}
-```
-
-#### CVA Increment Calculation
-
-See [OREAnalytics/orea/aggregation/staticcreditxvacalculator.cpp](../../OREAnalytics/orea/aggregation/staticcreditxvacalculator.cpp)
+**CVA Increment Calculation** ([staticcreditxvacalculator.cpp:80-90](../../OREAnalytics/orea/aggregation/staticcreditxvacalculator.cpp#L80)):
 
 ```cpp
 const Real StaticCreditXvaCalculator::calculateNettingSetCvaIncrement(
@@ -1341,6 +646,8 @@ const Real StaticCreditXvaCalculator::calculateNettingSetCvaIncrement(
     Handle<DefaultProbabilityTermStructure> dts =
         market_->defaultCurve(cid, configuration_)->curve();
     QL_REQUIRE(!dts.empty(), "Default curve missing for counterparty " << cid);
+
+    Real increment = 0.0;
 
     // Get survival probabilities at t0 and t1
     Real s0 = dts->survivalProbability(d0);  // Prob(no default before d0)
@@ -1352,13 +659,23 @@ const Real StaticCreditXvaCalculator::calculateNettingSetCvaIncrement(
     // CVA increment for period [d0, d1]
     // = LGD × Marginal PD × EPE
     // = (1 - rr) × (s0 - s1) × epe
-    Real increment = (1.0 - rr) * (s0 - s1) * epe;
+    increment = (1.0 - rr) * (s0 - s1) * epe;
 
     return increment;
 }
 ```
 
-#### Full CVA Calculation
+**Code Summary** ([staticcreditxvacalculator.cpp:80-90](../../OREAnalytics/orea/aggregation/staticcreditxvacalculator.cpp#L80)):
+- **Lines 82-84**: Retrieves counterparty default curve from market
+- **Lines 85-86**: Extracts survival probabilities at start (d0) and end (d1) of period
+- **Line 87**: Retrieves pre-calculated EPE from the exposure cube
+- **Line 88**: **CVA increment formula**:
+  - `(1.0 - rr)`: Loss Given Default (LGD), typically 60% if recovery rate is 40%
+  - `(s0 - s1)`: Marginal default probability in period [d0, d1]
+  - `epe`: Expected Positive Exposure at time d1
+- This is called for each time period and summed to get total CVA
+
+**Full CVA Calculation** (in base class `ValueAdjustmentCalculator::build()`):
 
 ```cpp
 void ValueAdjustmentCalculator::build() {
@@ -1419,245 +736,169 @@ CVA = (1 - RR) × ∫_0^T EPE(t) × λ(t) × S(t) × DF(t) dt
 Where λ(t) = hazard rate (instantaneous default probability)
 ```
 
-### Complete XVA Calculation Flow
-
-```
-1. Simulation completes → NPV Cube filled with 4.3M values
-
-2. PostProcess constructor called
-   ↓
-3. ExposureCalculator::build() [postprocess.cpp:137-151]
-   - Read NPV cube
-   - For each (trade, date):
-       EPE[trade][date] = mean(max(NPV[trade][date][sample], 0) over samples)
-   ↓
-4. StaticCreditXvaCalculator::build() [postprocess.cpp:311-336]
-   - For each netting set:
-       - For each time period [t_{i-1}, t_i]:
-           increment = LGD × (S(t_{i-1}) - S(t_i)) × EPE(t_i)
-       - CVA = Σ increments × DF
-   ↓
-5. Results stored in maps:
-   nettingSetCVA_["CPTY_A"] = 8542.35 EUR
-   tradeCVA_["Swap_20"] = 8542.35 EUR  (same since only 1 trade)
-```
-
-**Code Location Summary**:
-- **EPE Calculation**: [OREAnalytics/orea/aggregation/exposurecalculator.cpp](../../OREAnalytics/orea/aggregation/exposurecalculator.cpp)
-- **CVA Calculation**: [OREAnalytics/orea/aggregation/staticcreditxvacalculator.cpp](../../OREAnalytics/orea/aggregation/staticcreditxvacalculator.cpp)
-- **Orchestration**: [OREAnalytics/orea/aggregation/postprocess.cpp](../../OREAnalytics/orea/aggregation/postprocess.cpp#L55-L336)
-
 ---
 
-### Netting Set Configuration
+## 9. Complete Execution Flow
 
-See [Examples/Performance/Input/netting.xml](../../Examples/Performance/Input/netting.xml#L3-L31)
-
-```xml
-  <NettingSet>
-    <!-- Line 4: Netting set ID (matches portfolio) -->
-    <NettingSetId>CPTY_A</NettingSetId>
-
-    <!-- Line 5: CSA (Credit Support Annex) not active -->
-    <ActiveCSAFlag>false</ActiveCSAFlag>
-
-    <CSADetails>
-      <!-- Line 7-8: Bilateral CSA in EUR -->
-      <Bilateral>Bilateral</Bilateral>
-      <CSACurrency>EUR</CSACurrency>
-      <Index>EUR-EONIA</Index>
-
-      <!-- Line 10-11: Thresholds (not active since CSA disabled) -->
-      <ThresholdPay>100000</ThresholdPay>
-      <ThresholdReceive>100000</ThresholdReceive>
-
-      <!-- Line 22: Margin Period of Risk -->
-      <MarginPeriodOfRisk>0W</MarginPeriodOfRisk>
-    </CSADetails>
-  </NettingSet>
-```
-
-**Uncollateralized Exposure**: Since `ActiveCSAFlag=false`, the full swap value is at risk (no collateral posted).
-
-### XVA Post-Processing
-
-```cpp
-void XvaAnalyticImpl::runPostProcessor() {
-    // Create post-processor
-    postProcess_ = make_shared<PostProcess>(
-        portfolio_,
-        nettingSetManager_,
-        cube_,                        // Exposure cube from simulation
-        scenarioData_,                // Market scenarios (discount factors, etc.)
-        inputs_->marketDataFile(),    // Market data (default curves)
-        inputs_->asof(),
-        inputs_->baseCurrency());
-
-    // Calculate exposures
-    postProcess_->calculateExposures();
-
-    // Expected Positive Exposure (EPE)
-    // EPE(t) = E[max(V(t), 0)]
-    for (size_t dateIdx = 0; dateIdx < dates.size(); ++dateIdx) {
-        Real epe = 0.0;
-        for (size_t sample = 0; sample < samples_; ++sample) {
-            Real npv = cube_->get(tradeId, dateIdx, sample);
-            epe += std::max(npv, 0.0);  // Only positive exposures
-        }
-        epe /= samples_;                 // Average over scenarios
-        exposureProfile[dateIdx] = epe;
-    }
-
-    // Calculate CVA
-    // CVA = LGD × Σ_i EPE(t_i) × [PD(t_{i-1}, t_i)] × DF(t_i)
-    Real cva = 0.0;
-    Real lgd = 0.6;                      // Loss Given Default = 60%
-    for (size_t i = 1; i < dates.size(); ++i) {
-        Real epe_i = exposureProfile[i];
-        Real pd = defaultCurve->defaultProbability(dates[i-1], dates[i]);  // Marginal PD
-        Real df = discountCurve->discount(dates[i]);                       // Discount factor
-        cva += lgd * epe_i * pd * df;
-    }
-
-    // Write reports
-    writeCVAReport(cva);
-    writeExposureProfile(exposureProfile);
-}
-```
-
-**CVA Formula**:
-```
-CVA = LGD × Σ EPE(tᵢ) × PD(tᵢ₋₁, tᵢ) × DF(tᵢ)
-
-Where:
-- LGD = Loss Given Default (typically 60%)
-- EPE(tᵢ) = Expected Positive Exposure at time i
-- PD(tᵢ₋₁, tᵢ) = Marginal probability of default between tᵢ₋₁ and tᵢ
-- DF(tᵢ) = Risk-free discount factor to time i
-```
-
----
-
-## 10. Complete Execution Flow
-
-Here's the complete call stack with line references:
+Here's the complete call stack with line references and code summaries:
 
 ```
 run_cvasensi.py:16
-    oreex.run("Input/ore_amc_legacy.xml")
+    ↓
+    [Code: oreex.run("Input/ore_amc_legacy.xml")]
+    [Summary: Execute ORE binary with XML configuration]
     ↓
 ore_examples_helper.py:340
-    subprocess.call([self.ore_exe, xml])
     ↓
-System executes: ../../build/App/ore Input/ore_amc_legacy.xml
-    ↓
-App/ore.cpp:main()
-    params->fromFile("Input/ore_amc_legacy.xml")
-    app = make_shared<OREApp>(params)
-    app->run()
+    [Code: subprocess.call([self.ore_exe, xml])]
+    [Summary: Spawn subprocess executing ../../build/App/ore Input/ore_amc_legacy.xml]
     ↓
 OREAnalytics/orea/app/oreapp.cpp:435 - OREApp::run()
+  │
   ├─ Line 449-456: initFromParams()
+  │  │  [Summary: Load all XML configuration files into memory]
   │  ├─ oreapp.cpp:346: outputPath_ = "Output/cvasensi/amc_legacy"
   │  ├─ oreapp.cpp:392: setupLog()
+  │  │  [Summary: Initialize logging system]
   │  ├─ oreapp.cpp:400: inputs_ = make_shared<OREAppInputParameters>(params_)
   │  └─ oreapp.cpp:401: inputs_->loadParameters()
-  │     ├─ Load portfolio_cvasensi.xml → Single 20Y swap
+  │     │  [Summary: Parse and load all input files]
+  │     ├─ Load portfolio_cvasensi.xml → Single 20Y EUR swap
   │     ├─ Load simulation_xva.xml → Grid: 528×2W, Samples: 8192
   │     ├─ Load pricingengine_amc.xml → AMC engine with regression
   │     ├─ Load market_20160205.txt → Market quotes
   │     └─ Load fixings_20160205.txt → Historical fixings
   │
   └─ Line 464-471: analytics()
+     │  [Summary: Execute all configured analytics]
      ├─ oreapp.cpp:247: InstrumentConventions::instance().setConventions()
+     │  [Summary: Load day count conventions, calendars, etc.]
      ├─ oreapp.cpp:249-256: Create market data loader
+     │  [Summary: Initialize CSV reader for market data files]
      ├─ oreapp.cpp:258: analyticsManager_ = make_shared<AnalyticsManager>()
      ├─ oreapp.cpp:259: analyticsManager_->initialise()
+     │  │  [Summary: Parse XML and create analytic objects]
      │  └─ Create analytic objects from XML:
      │     ├─ NpvAnalytic (ore_amc_legacy.xml:29)
      │     ├─ CashflowAnalytic (ore_amc_legacy.xml:34)
      │     └─ XvaAnalytic (ore_amc_legacy.xml:44 + 55)
      │
      └─ oreapp.cpp:273: analyticsManager_->runAnalytics()
+        │  [Summary: Execute analytics in sequence]
         ├─ Run NPV Analytic → npv.csv
+        │  [Summary: Calculate present value using today's market]
         ├─ Run Cashflow Analytic → flows.csv
+        │  [Summary: Generate detailed cashflow schedules]
         └─ Run XVA Analytic (includes simulation)
            ↓
 OREAnalytics/orea/app/analytics/xvaanalytic.cpp - XvaAnalyticImpl::runAnalytic()
+  │  [Summary: Main XVA analytic execution orchestrator]
+  │
   ├─ Build Scenario Simulation Market
+  │  │  [Summary: Create market objects that can be updated by scenarios]
   │  └─ TodaysMarket → ScenarioSimMarket (for each scenario)
   │
   ├─ Build and Calibrate Cross-Asset Model
+  │  │  [Summary: Calibrate interest rate models to market volatilities]
   │  ├─ Create LGM for EUR (simulation_xva.xml:20)
   │  ├─ Read swaption volatilities from market data
   │  └─ Bootstrap calibration (simulation_xva.xml:21)
   │     └─ For each swaption: adjust LGM vol to match market
   │
   ├─ Build Scenario Generator
+  │  │  [Summary: Initialize Monte Carlo path generation]
   │  ├─ Create Burley2020SobolBrownianBridge sequence (simulation_xva.xml:6)
   │  ├─ Initialize with seed 42 (simulation_xva.xml:8)
   │  └─ Generate 8192 paths (simulation_xva.xml:9)
   │
   ├─ Initialize Exposure Cube
+  │  │  [Summary: Allocate memory for NPV storage]
   │  └─ Dimensions: 1 trade × 528 dates × 8192 scenarios
+  │     [Memory: ~35 MB for 4.3M float values]
   │
   ├─ Run AMC Simulation (ore_amc_legacy.xml:46 - amc=Y, amcCg=Disabled)
+  │  │  [Summary: Execute legacy AMC simulation loop]
   │  ├─ buildAmcPortfolio()
+  │  │  │  [Summary: Identify trades eligible for AMC pricing]
   │  │  └─ Classify Swap_20 as AMC-eligible (ore_amc_legacy.xml:49)
   │  │
   │  ├─ Create AMC Engine Factory
+  │  │  │  [Summary: Configure AMC pricing engines with regression]
   │  │  └─ Load pricingengine_amc.xml:30
   │  │     ├─ Training.Samples=8192 (pricingengine_amc.xml:37)
   │  │     ├─ BasisFunction=Monomial (pricingengine_amc.xml:41)
   │  │     └─ BasisFunctionOrder=6 (pricingengine_amc.xml:42)
+  │  │        [Summary: Use polynomial regression up to x^6]
   │  │
   │  ├─ Build AMC Portfolio
+  │  │  │  [Summary: Attach AMC pricing engines to trades]
   │  │  └─ Swap_20 → AMCEngine with regression
   │  │
   │  └─ For each date i in [0, 528):
   │     └─ For each scenario j in [0, 8192):
+  │        │  [Summary: Price trade at each (date, scenario) combination]
   │        ├─ Update simMarket to (date_i, scenario_j)
+  │        │  [Summary: Set yield curves to simulated values]
   │        ├─ Price Swap_20 using AMC engine
+  │        │  │  [Summary: Use regression to estimate continuation value]
   │        │  ├─ Simulate future paths from current state
   │        │  ├─ Compute cashflows at t+dt
   │        │  ├─ Regression: V(t) ≈ β₀ + β₁·r + β₂·r² + ... + β₆·r⁶
   │        │  └─ Return continuation value
   │        └─ Store NPV in amcCube_[0][i][j]
+  │           [Summary: Save valuation in cube]
   │
   └─ Run XVA Post-Processor (ore_amc_legacy.xml:55 - xva analytic)
-     ├─ Calculate Expected Positive Exposure (EPE)
-     │  └─ For each date i:
-     │     └─ EPE[i] = mean(max(amcCube_[0][i][j], 0)) over j
+     │  [Summary: Calculate exposures and CVA from simulation results]
      │
-     ├─ Calculate CVA (ore_amc_legacy.xml:63)
+     ├─ exposurecalculator.cpp:72 - ExposureCalculator::build()
+     │  │  [Summary: Calculate EPE/ENE from NPV cube]
+     │  └─ For each date i:
+     │     │  [Summary: Aggregate exposures across scenarios]
+     │     └─ EPE[i] = (1/8192) × Σ_j max(amcCube_[0][i][j], 0)
+     │        [Formula: Average of positive exposures]
+     │
+     ├─ staticcreditxvacalculator.cpp:80 - Calculate CVA
+     │  │  [Summary: Compute CVA using EPE and default probabilities]
      │  ├─ Read default curve for CPTY_A from market data
-     │  ├─ LGD = 60% (default)
-     │  └─ CVA = LGD × Σ EPE[i] × PD[i] × DF[i]
+     │  ├─ LGD = 60% (default recovery rate = 40%)
+     │  └─ For each period [t_{i-1}, t_i]:
+     │     │  [Summary: Calculate CVA contribution from each period]
+     │     └─ CVA += LGD × (S(t_{i-1}) - S(t_i)) × EPE[i] × DF[i]
+     │        [Formula: Loss × Marginal PD × Exposure × Discount]
      │
      └─ Write Reports
+        │  [Summary: Output results to CSV files]
         ├─ exposure_trade_Swap_20.csv (ore_amc_legacy.xml:60)
+        │  [Content: EPE, ENE, PFE time series by trade]
         ├─ exposure_nettingset_CPTY_A.csv (ore_amc_legacy.xml:59)
+        │  [Content: Aggregated exposures by netting set]
         └─ xva.csv (ore_amc_legacy.xml:63)
+           [Content: CVA, DVA, FVA values]
 ```
 
 ---
 
-## 11. Output Files
+## 10. Output Files
 
 All outputs are written to `Output/cvasensi/amc_legacy/`
 
 ### npv.csv
 
-Basic NPV valuation using today's market.
+**Purpose**: Basic NPV valuation using today's market data
+**Generated by**: NPV Analytic
 
 ```csv
 TradeId,TradeType,Notional,NPV,BaseCurrency
 Swap_20,Swap,10000000,-125432.18,EUR
 ```
 
+**Summary**: The swap has a negative NPV (we're receiving fixed at 2% when market rates are higher)
+
 ### flows.csv
 
-Detailed cashflow schedule.
+**Purpose**: Detailed cashflow schedule
+**Generated by**: Cashflow Analytic
 
 ```csv
 TradeId,Type,LegNo,PayDate,Amount,DiscountFactor,PV,FlowType
@@ -1667,9 +908,12 @@ Swap_20,Swap,2,2016-10-28,-157820,0.9921,-156573,FloatingRate
 ...
 ```
 
+**Summary**: Lists all future cashflows (fixed leg receives 200k annually, floating leg pays semi-annually)
+
 ### exposure_trade_Swap_20.csv
 
-Exposure profile for the swap over time.
+**Purpose**: Exposure profile for the swap over time
+**Generated by**: ExposureCalculator from NPV cube
 
 ```csv
 Time,Date,EPE,ENE,AllocatedEPE,AllocatedENE,BaselEPE,BaselEE
@@ -1681,14 +925,17 @@ Time,Date,EPE,ENE,AllocatedEPE,AllocatedENE,BaselEPE,BaselEE
 ```
 
 **Columns**:
-- **Time**: Time in years from asof
+- **Time**: Time in years from asof date
 - **EPE**: Expected Positive Exposure = E[max(V, 0)]
 - **ENE**: Expected Negative Exposure = E[max(-V, 0)]
 - **BaselEE**: Basel Expected Exposure (regulatory metric)
 
+**Summary**: EPE peaks in mid-life (~5-10 years) when interest rate uncertainty is highest, then decays to zero at maturity
+
 ### exposure_nettingset_CPTY_A.csv
 
-Aggregated exposure at netting set level.
+**Purpose**: Aggregated exposure at netting set level
+**Generated by**: NettedExposureCalculator
 
 ```csv
 Time,Date,EPE,ENE,PFE,ExpectedCollateral,ColvaIncrement,CollateralFloor
@@ -1698,12 +945,15 @@ Time,Date,EPE,ENE,PFE,ExpectedCollateral,ColvaIncrement,CollateralFloor
 ```
 
 **Columns**:
-- **PFE**: Potential Future Exposure = 95th percentile of exposure distribution (from ore_amc_legacy.xml:61)
-- **ExpectedCollateral**: Expected collateral held (0 since CSA inactive)
+- **PFE**: Potential Future Exposure = 95th percentile of exposure distribution
+- **ExpectedCollateral**: Expected collateral held (0 since CSA inactive in this example)
+
+**Summary**: Netting set level aggregation (same as trade level since only one trade)
 
 ### xva.csv
 
-CVA and other XVA metrics.
+**Purpose**: CVA and other XVA metrics
+**Generated by**: StaticCreditXvaCalculator
 
 ```csv
 TradeId,NettingSetId,CVA,DVA,FVA,COLVA,CollateralFloor,BaseCurrency
@@ -1716,9 +966,12 @@ Swap_20,CPTY_A,8542.35,0.00,0.00,0.00,0.00,EUR
 - **FVA**: Funding Valuation Adjustment (not calculated in this run)
 - **COLVA**: Collateral Valuation Adjustment (0 since uncollateralized)
 
+**Summary**: CVA of 8,542 EUR represents the expected loss from counterparty default over the swap's lifetime
+
 ### log.txt
 
-Detailed execution log with timing information.
+**Purpose**: Detailed execution log with timing information
+**Generated by**: ORE logging system
 
 ```
 Starting Analytics Manager
@@ -1731,68 +984,131 @@ XVA completed: ExposureCalculation: 0.543s, CVACalculation: 0.234s, Total: 0.777
 ...
 ```
 
+**Summary**: Provides detailed timing breakdown and diagnostic information
+
 ---
 
-## 12. Comparison with Other Methods
+## 11. Comparison with Other Methods
 
 The `run_cvasensi.py` script runs four different approaches for comparison:
 
 ### 1. AMC Legacy (ore_amc_legacy.xml:48 - amcCg=Disabled)
 
-- **Method**: Direct C++ AMC implementation
-- **Time**: ~9 seconds (Apple M2 Max)
-- **Pros**: Fast, well-tested, straightforward
-- **Cons**: No sensitivities, no GPU support
+**Implementation**: Direct C++ AMC implementation in [OREAnalytics/orea/engine/amcvaluationengine.cpp](../../OREAnalytics/orea/engine/amcvaluationengine.cpp)
+
+**Method**:
+- Traditional AMC with polynomial regression
+- No computation graph abstraction
+- Direct C++ calculation path
+
+**Time**: ~9 seconds (Apple M2 Max)
+
+**Pros**:
+- Fast execution
+- Well-tested and mature
+- Straightforward implementation
+
+**Cons**:
+- No AAD sensitivities
+- No GPU support
+- Limited to exposure generation only
 
 ### 2. Bump & Reval with CG (ore_cvasensi_bump.xml)
 
-- **Method**: Bump each risk factor, recompute CVA, calculate sensitivity
-- **Uses**: Computation Graph framework for XVA
-- **Time**: ~48 seconds (Apple M2 Max)
-- **Pros**: Works for any model
-- **Cons**: Slow (N bumps for N risk factors)
+**Implementation**: Uses Computation Graph framework in [OREAnalytics/orea/engine/xvaenginecg.cpp](../../OREAnalytics/orea/engine/xvaenginecg.cpp)
+
+**Method**:
+- Bump each risk factor
+- Recompute CVA for each bump
+- Calculate finite difference sensitivity
+
+**Time**: ~48 seconds (Apple M2 Max)
+
+**Pros**:
+- Works for any model
+- Conceptually simple
+- Full CVA sensitivity matrix
+
+**Cons**:
+- Slow (N bumps for N risk factors)
+- Computational cost scales linearly with number of risk factors
 
 ### 3. AAD Sensitivities (ore_cvasensi_ad.xml)
 
-- **Method**: Algorithmic Automatic Differentiation via Computation Graph
-- **Time**: ~2 seconds (Apple M2 Max)
-- **Pros**: All sensitivities in one run (adjoint mode)
-- **Cons**: Requires CG framework (slower base case)
+**Implementation**: Algorithmic Automatic Differentiation via Computation Graph
+
+**Method**:
+- Record all operations in computation graph
+- Use adjoint mode AAD for sensitivity calculation
+- All sensitivities computed in one backward pass
+
+**Time**: ~2 seconds (Apple M2 Max)
+
+**Pros**:
+- **24× speedup vs. bump & reval**
+- All sensitivities in one run (adjoint mode)
+- Efficient for high-dimensional problems
+
+**Cons**:
+- Requires CG framework (some overhead)
+- More complex implementation
 
 ### 4. GPU Acceleration (ore_cvasensi_gpu.xml)
 
-- **Method**: Bump & reval using external compute device (GPU/OpenCL)
-- **Time**: ~55 seconds (Apple M2 Max, work in progress)
-- **Pros**: Potential for massive parallelization
-- **Cons**: Not yet optimized, conditional expectation still on CPU
+**Implementation**: External compute device support (GPU/OpenCL)
+
+**Method**:
+- Offload scenario generation to GPU
+- Parallel valuation across scenarios
+- Bump & reval with GPU acceleration
+
+**Time**: ~55 seconds (Apple M2 Max, work in progress)
+
+**Pros**:
+- Potential for massive parallelization
+- Scalable to large portfolios
+
+**Cons**:
+- Not yet optimized (slower than CPU currently)
+- Conditional expectation still on CPU
+- Requires GPU hardware
 
 ### Performance Summary
 
-| Method | Time (M2 Max) | Speedup vs. Bump | Use Case |
-|--------|---------------|------------------|----------|
-| AMC Legacy | 9s | N/A | Exposure generation only |
-| Bump & Reval (CG) | 48s | 1.0× | Benchmark |
-| AAD | 2s | 24× | Sensitivity calculation |
-| GPU (WIP) | 55s | 0.87× | Future optimization |
+| Method | Time (M2 Max) | Speedup vs. Bump | Use Case | Implementation File |
+|--------|---------------|------------------|----------|-------------------|
+| **AMC Legacy** | 9s | N/A | Exposure generation only | [amcvaluationengine.cpp](../../OREAnalytics/orea/engine/amcvaluationengine.cpp) |
+| **Bump & Reval (CG)** | 48s | 1.0× | Benchmark | [xvaenginecg.cpp](../../OREAnalytics/orea/engine/xvaenginecg.cpp) |
+| **AAD** | 2s | **24×** | Sensitivity calculation | [xvaenginecg.cpp](../../OREAnalytics/orea/engine/xvaenginecg.cpp) |
+| **GPU (WIP)** | 55s | 0.87× | Future optimization | GPU engine (in development) |
 
-**Conclusion**: For CVA **sensitivities**, AAD provides significant speedup (24×). For simple exposure generation, AMC Legacy remains fastest.
+**Conclusion**: For CVA **sensitivities**, AAD provides significant speedup (24×). For simple exposure generation without sensitivities, AMC Legacy remains fastest.
 
 ---
 
 ## Appendix A: Key Files Reference
 
-| File | Purpose | Key Lines |
-|------|---------|-----------|
-| [run_cvasensi.py](../../Examples/Performance/run_cvasensi.py) | Python orchestration script | 16 |
-| [ore_examples_helper.py](../../Examples/ore_examples_helper.py) | Helper class for running ORE | 332-342 |
-| [ore_amc_legacy.xml](../../Examples/Performance/Input/ore_amc_legacy.xml) | Main configuration | 44-64 |
-| [simulation_xva.xml](../../Examples/Performance/Input/simulation_xva.xml) | Simulation parameters | 3-12, 19-45 |
-| [pricingengine_amc.xml](../../Examples/Performance/Input/pricingengine_amc.xml) | AMC engine config | 30-48 |
-| [portfolio_cvasensi.xml](../../Examples/Performance/Input/portfolio_cvasensi.xml) | Trade definitions | 3-73 |
-| [netting.xml](../../Examples/Performance/Input/netting.xml) | CSA/netting config | 3-31 |
-| [OREAnalytics/orea/app/oreapp.cpp](../../OREAnalytics/orea/app/oreapp.cpp) | Main application logic | 345-481 |
-| [OREAnalytics/orea/app/analytics/xvaanalytic.hpp](../../OREAnalytics/orea/app/analytics/xvaanalytic.hpp) | XVA analytic header | 32-106 |
-| [OREAnalytics/orea/app/analytics/xvaanalytic.cpp](../../OREAnalytics/orea/app/analytics/xvaanalytic.cpp) | XVA analytic implementation | - |
+### Core Implementation Files
+
+| File | Purpose | Key Lines | Code Summary |
+|------|---------|-----------|--------------|
+| [run_cvasensi.py](../../Examples/Performance/run_cvasensi.py) | Python orchestration script | 16 | Executes ORE binary with XML config |
+| [ore_amc_legacy.xml](../../Examples/Performance/Input/ore_amc_legacy.xml) | Main configuration | 44-64 | Defines analytics and AMC settings |
+| [oreapp.cpp](../../OREAnalytics/orea/app/oreapp.cpp) | Main application logic | 435-481 | Initializes and runs analytics |
+| [xvaanalytic.hpp](../../OREAnalytics/orea/app/analytics/xvaanalytic.hpp) | XVA analytic header | 32-106 | Defines XVA calculation workflow |
+| [npvcube.hpp](../../OREAnalytics/orea/cube/npvcube.hpp) | NPV cube storage | 38-135 | 4-D array for (trade,date,scenario,depth) |
+| [exposurecalculator.cpp](../../OREAnalytics/orea/aggregation/exposurecalculator.cpp) | EPE/ENE calculation | 72-200 | Computes exposures from NPV cube |
+| [staticcreditxvacalculator.cpp](../../OREAnalytics/orea/aggregation/staticcreditxvacalculator.cpp) | CVA calculation | 80-90 | Computes CVA from EPE and default curves |
+| [postprocess.hpp](../../OREAnalytics/orea/aggregation/postprocess.hpp) | XVA orchestration | 49-93 | Orchestrates exposure and XVA calculations |
+
+### Supporting Files
+
+| File | Purpose |
+|------|---------|
+| [simulation_xva.xml](../../Examples/Performance/Input/simulation_xva.xml) | Simulation parameters (grid, samples, model) |
+| [pricingengine_amc.xml](../../Examples/Performance/Input/pricingengine_amc.xml) | AMC engine configuration (regression settings) |
+| [portfolio_cvasensi.xml](../../Examples/Performance/Input/portfolio_cvasensi.xml) | Trade definitions (20Y EUR swap) |
+| [netting.xml](../../Examples/Performance/Input/netting.xml) | CSA/netting configuration |
 
 ---
 
@@ -1811,7 +1127,7 @@ The `run_cvasensi.py` script runs four different approaches for comparison:
 | **PFE** | Potential Future Exposure - high percentile (e.g., 95%) of exposure distribution |
 | **LGM** | Linear Gaussian Model - interest rate model used in CAM |
 | **CAM** | Cross-Asset Model - multi-currency, multi-asset simulation model |
-| **NPV Cube** | 3D array storing trade values: [Trade][Date][Scenario] |
+| **NPV Cube** | 4-D array storing trade values: [Trade][Date][Scenario][Depth] |
 | **Regression** | Statistical method to estimate continuation values in AMC |
 | **Basis Functions** | Polynomials used in regression (e.g., Monomial: 1, x, x², ...) |
 | **Burley2020Sobol** | Low-discrepancy random number sequence for Monte Carlo |
@@ -1819,35 +1135,19 @@ The `run_cvasensi.py` script runs four different approaches for comparison:
 
 ---
 
-## Appendix C: Example Output Visualization
+## Appendix C: Code Flow Summary
 
-### Exposure Profile
+**From Python to CVA Result**:
 
-The EPE evolves over time as the swap's remaining maturity decreases:
+1. **Python** ([run_cvasensi.py:16](../../Examples/Performance/run_cvasensi.py#L16)): Execute ORE binary
+2. **App Entry** ([oreapp.cpp:435](../../OREAnalytics/orea/app/oreapp.cpp#L435)): Initialize application
+3. **Load Config** ([oreapp.cpp:345](../../OREAnalytics/orea/app/oreapp.cpp#L345)): Parse all XML files
+4. **Run Analytics** ([oreapp.cpp:234](../../OREAnalytics/orea/app/oreapp.cpp#L234)): Execute analytics sequence
+5. **XVA Analytic** ([xvaanalytic.hpp:32](../../OREAnalytics/orea/app/analytics/xvaanalytic.hpp#L32)): Orchestrate XVA calculation
+6. **Simulation**: Build model, generate scenarios, price trades
+7. **Store in Cube** ([npvcube.hpp:98](../../OREAnalytics/orea/cube/npvcube.hpp#L98)): Save NPVs in 4-D array
+8. **Calculate EPE** ([exposurecalculator.cpp:72](../../OREAnalytics/orea/aggregation/exposurecalculator.cpp#L72)): Aggregate cube to exposure profiles
+9. **Calculate CVA** ([staticcreditxvacalculator.cpp:80](../../OREAnalytics/orea/aggregation/staticcreditxvacalculator.cpp#L80)): Apply default probabilities
+10. **Write Reports**: Output CSV files with results
 
-```
-EPE
- |
- |     ___
- |    /   \___
- |   /        \___
- |  /             \___
- | /                  \___
- |/________________________\___
- 0Y     5Y    10Y    15Y    20Y
-```
-
-**Key Features**:
-- **Peak around 5-10Y**: Swap has maximum uncertainty in mid-life
-- **Decay to zero**: At maturity, value converges to zero
-- **Market dependence**: Shape depends on interest rate volatility
-
-### CVA Calculation
-
-```
-CVA = LGD × Σ EPE(tᵢ) × PD(tᵢ₋₁, tᵢ) × DF(tᵢ)
-    = 60% × Σ [125k → 45k] × [small PDs] × [0.99 → 0.65]
-    ≈ 8,542 EUR
-```
-
-This represents the expected loss from counterparty default over the life of the trade.
+Each step is implemented in specific C++ source files with clear responsibilities and documented interfaces.
