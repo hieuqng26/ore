@@ -5,15 +5,16 @@ This document provides a detailed explanation of how the SA-CCR (Standardized Ap
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Python Script Entry Point](#python-script-entry-point)
-3. [ORE Application Bootstrap](#ore-application-bootstrap)
-4. [XML Configuration Parsing](#xml-configuration-parsing)
-5. [Analytics Manager Initialization](#analytics-manager-initialization)
-6. [SA-CCR Analytic Execution](#sa-ccr-analytic-execution)
-7. [SACCR Engine Calculation](#saccr-engine-calculation)
-8. [Report Generation](#report-generation)
-9. [Complete Flow Diagram](#complete-flow-diagram)
-10. [Key Data Structures](#key-data-structures)
+2. [Python Script Entry Point](#1-python-script-entry-point)
+3. [ORE Application Bootstrap](#2-ore-application-bootstrap)
+4. [XML Configuration Parsing](#3-xml-configuration-parsing)
+5. [Analytics Manager Initialization](#4-analytics-manager-initialization)
+6. [SA-CCR Analytic Execution](#5-sa-ccr-analytic-execution)
+7. [SACCR Engine Calculation](#6-saccr-engine-calculation)
+8. [Report Generation](#7-report-generation)
+9. [Complete Flow Diagram](#8-complete-flow-diagram)
+10. [Key Data Structures](#9-key-data-structures)
+11. [Key File Reference Table](#10-key-file-reference-table)
 
 ---
 
