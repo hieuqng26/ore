@@ -146,7 +146,7 @@ class OREXlsxConverter:
         # Step 1: Read Excel file
         print("Step 1: Reading Excel file...")
         self.reader = ExcelTradeReader(str(self.excel_path))
-        trade_data = self.reader.read_all()
+        self.reader.read_all()
 
         if self.reader.get_warnings():
             print("Excel Reader Warnings:")
@@ -169,10 +169,7 @@ class OREXlsxConverter:
         )
 
         portfolio_elem = self.portfolio_generator.generate(
-            swaps=self.reader.get_swaps(),
-            fx_forwards=self.reader.get_fx_forwards(),
-            fx_options=self.reader.get_fx_options(),
-            cross_currency_swaps=self.reader.get_cross_currency_swaps()
+            trades=self.reader.get_all_trades()
         )
 
         self.portfolio_path = self.temp_folder / "portfolio.xml"

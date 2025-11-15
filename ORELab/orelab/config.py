@@ -10,43 +10,31 @@ INPUT_PATH = ORELAB_ROOT / "Input"
 STATIC_PATH = INPUT_PATH / "Static"
 OUTPUT_PATH = ORELAB_ROOT / "Output"
 
-# Supported trade types
-TRADE_TYPES = {
-    "InterestRateSwaps": "Swap",
-    "FXForwards": "FxForward",
-    "FXOptions": "FxOption",
-    "CrossCurrencySwaps": "Swap"  # CCS is also TradeType=Swap but with 2 currencies
-}
-
 # Excel sheet names
 SHEET_NAMES = {
-    "SWAPS": "InterestRateSwaps",
-    "FX_FORWARDS": "FXForwards",
-    "FX_OPTIONS": "FXOptions",
-    "CCS": "CrossCurrencySwaps",
     "NETTING": "NettingSets"
 }
 
 # Required columns per trade type
 REQUIRED_COLUMNS = {
-    "InterestRateSwaps": [
+    "InterestRateSwap": [
         "TradeId", "CounterParty", "Currency", "Notional",
         "StartDate", "EndDate", "PayerOrReceiver",
         "FixedRate", "FixedTenor", "FixedDayCounter",
         "FloatingIndex", "FloatingTenor", "FloatingDayCounter"
     ],
-    "FXForwards": [
+    "FxForward": [
         "TradeId", "CounterParty", "ValueDate",
         "BoughtCurrency", "BoughtAmount",
         "SoldCurrency", "SoldAmount"
     ],
-    "FXOptions": [
+    "FxOption": [
         "TradeId", "CounterParty", "ExerciseDate",
         "LongShort", "OptionType", "Style",
         "BoughtCurrency", "BoughtAmount",
         "SoldCurrency", "SoldAmount"
     ],
-    "CrossCurrencySwaps": [
+    "CrossCurrencySwap": [
         "TradeId", "CounterParty",
         "StartDate", "EndDate",
         "Currency1", "Notional1", "Index1", "Spread1",

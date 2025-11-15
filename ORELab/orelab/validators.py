@@ -70,10 +70,10 @@ class TradeValidator:
 
         # Type-specific validation
         validator_map = {
-            "InterestRateSwaps": TradeValidator._validate_swap,
-            "FXForwards": TradeValidator._validate_fx_forward,
-            "FXOptions": TradeValidator._validate_fx_option,
-            "CrossCurrencySwaps": TradeValidator._validate_ccs,
+            "InterestRateSwap": TradeValidator._validate_swap,
+            "FxForward": TradeValidator._validate_fx_forward,
+            "FxOption": TradeValidator._validate_fx_option,
+            "CrossCurrencySwap": TradeValidator._validate_ccs,
             "NettingSets": TradeValidator._validate_netting,
         }
 

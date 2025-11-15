@@ -35,6 +35,7 @@ class ExcelTradeReader:
             raise FileNotFoundError(f"Excel file not found: {excel_path}")
 
         self._data: Dict[str, pd.DataFrame] = {}
+        self._trade_types: List[str] = []
         self._warnings: List[str] = []
 
     def read_all(self) -> Dict[str, pd.DataFrame]:
@@ -52,33 +53,39 @@ class ExcelTradeReader:
             excel_file = pd.ExcelFile(self.excel_path, engine='openpyxl')
             available_sheets = excel_file.sheet_names
 
-            for sheet_key, sheet_name in SHEET_NAMES.items():
-                if sheet_name in available_sheets:
-                    df = pd.read_excel(
-                        excel_file,
-                        sheet_name=sheet_name,
-                        dtype=str  # Read as strings initially for validation
-                    )
+            for sheet_name in available_sheets:
+                df = pd.read_excel(
+                    excel_file,
+                    sheet_name=sheet_name,
+                    dtype=str  # Read as strings initially for validation
+                )
 
-                    # Basic cleanup
-                    df = self._clean_dataframe(df)
+                # Basic cleanup
+                df = self._clean_dataframe(df)
 
-                    # Validate columns
-                    missing_cols = self._validate_columns(sheet_name, df)
-                    if missing_cols:
+                # Validate columns
+                if 'TradeType' in df.columns:
+                    trade_type = df['TradeType'].unique()
+                    if len(trade_type) > 1:
                         self._warnings.append(
-                            f"Sheet '{sheet_name}': Missing columns {missing_cols}. "
-                            "Trades may fail validation."
+                            f"Sheet '{sheet_name}': Multiple TradeTypes found {trade_type}. "
+                            "This may lead to validation issues."
                         )
-
-                    # Store non-empty dataframes
-                    if not df.empty:
-                        self._data[sheet_name] = df
                     else:
-                        self._warnings.append(f"Sheet '{sheet_name}' is empty, skipping.")
+                        sheet_name = trade_type[0]
+                        self._trade_types.append(sheet_name)
+                        missing_cols = self._validate_columns(sheet_name, df)
+                        if missing_cols:
+                            self._warnings.append(
+                                f"Sheet '{sheet_name}': Missing columns {missing_cols}. "
+                                "Trades may fail validation."
+                            )
+
+                # Store non-empty dataframes
+                if not df.empty:
+                    self._data[sheet_name] = df
                 else:
-                    # Sheet not found - this is OK, not all sheets are required
-                    pass
+                    self._warnings.append(f"Sheet '{sheet_name}' is empty, skipping.")
 
             excel_file.close()
 
@@ -102,22 +109,14 @@ class ExcelTradeReader:
             DataFrame or None if sheet not found
         """
         return self._data.get(sheet_name)
-
-    def get_swaps(self) -> Optional[pd.DataFrame]:
-        """Get Interest Rate Swaps data."""
-        return self.get_sheet(SHEET_NAMES["SWAPS"])
-
-    def get_fx_forwards(self) -> Optional[pd.DataFrame]:
-        """Get FX Forwards data."""
-        return self.get_sheet(SHEET_NAMES["FX_FORWARDS"])
-
-    def get_fx_options(self) -> Optional[pd.DataFrame]:
-        """Get FX Options data."""
-        return self.get_sheet(SHEET_NAMES["FX_OPTIONS"])
-
-    def get_cross_currency_swaps(self) -> Optional[pd.DataFrame]:
-        """Get Cross-Currency Swaps data."""
-        return self.get_sheet(SHEET_NAMES["CCS"])
+    
+    def get_all_trades(self) -> Dict[str, pd.DataFrame]:
+        """Get all trade data."""
+        return {k: self.get_sheet(k) for k in self._trade_types}
+    
+    def get_trades(self, trade_type: str) -> Optional[pd.DataFrame]:
+        """Get trades of a specific type."""
+        return self.get_sheet(trade_type)
 
     def get_netting_sets(self) -> Optional[pd.DataFrame]:
         """Get Netting Sets data."""
@@ -160,7 +159,7 @@ class ExcelTradeReader:
         Validate that required columns are present.
 
         Args:
-            sheet_name: Name of sheet being validated
+            sheet_name: Name of the sheet being validated
             df: DataFrame to validate
 
         Returns:

@@ -7,12 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import pandas as pd
 
-from ..trade_builders import (
-    InterestRateSwapBuilder,
-    FxForwardBuilder,
-    FxOptionBuilder,
-    CrossCurrencySwapBuilder
-)
+from ..trade_builders import TradeBuilders
 from ..validators import TradeValidator
 from ..config import SHEET_NAMES, VALIDATION_SETTINGS
 
@@ -39,19 +34,13 @@ class PortfolioGenerator:
 
     def generate(
         self,
-        swaps: Optional[pd.DataFrame] = None,
-        fx_forwards: Optional[pd.DataFrame] = None,
-        fx_options: Optional[pd.DataFrame] = None,
-        cross_currency_swaps: Optional[pd.DataFrame] = None,
+        trades: Dict[str, pd.DataFrame]
     ) -> etree.Element:
         """
         Generate portfolio XML from trade DataFrames.
 
         Args:
-            swaps: Interest Rate Swaps DataFrame
-            fx_forwards: FX Forwards DataFrame
-            fx_options: FX Options DataFrame
-            cross_currency_swaps: Cross-Currency Swaps DataFrame
+            trades: Dictionary of trade DataFrames keyed by trade type
 
         Returns:
             Portfolio XML element
@@ -59,39 +48,17 @@ class PortfolioGenerator:
         # Create root Portfolio element
         portfolio = etree.Element("Portfolio")
 
-        # Process each trade type
-        if swaps is not None and not swaps.empty:
+        for trade_type, df in trades.items():
+            if df is None or df.empty:
+                continue
+
             self._add_trades(
                 portfolio,
-                swaps,
-                SHEET_NAMES["SWAPS"],
-                InterestRateSwapBuilder
+                df,
+                trade_type,
+                TradeBuilders[trade_type]
             )
-
-        if fx_forwards is not None and not fx_forwards.empty:
-            self._add_trades(
-                portfolio,
-                fx_forwards,
-                SHEET_NAMES["FX_FORWARDS"],
-                FxForwardBuilder
-            )
-
-        if fx_options is not None and not fx_options.empty:
-            self._add_trades(
-                portfolio,
-                fx_options,
-                SHEET_NAMES["FX_OPTIONS"],
-                FxOptionBuilder
-            )
-
-        if cross_currency_swaps is not None and not cross_currency_swaps.empty:
-            self._add_trades(
-                portfolio,
-                cross_currency_swaps,
-                SHEET_NAMES["CCS"],
-                CrossCurrencySwapBuilder
-            )
-
+            
         return portfolio
 
     def _add_trades(

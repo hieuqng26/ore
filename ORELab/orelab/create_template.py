@@ -98,10 +98,10 @@ def create_sample_excel_template(output_path: str = None):
 
     # Write to Excel with multiple sheets
     with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-        df_swaps.to_excel(writer, sheet_name='InterestRateSwaps', index=False)
-        df_fx_fwd.to_excel(writer, sheet_name='FXForwards', index=False)
-        df_fx_opt.to_excel(writer, sheet_name='FXOptions', index=False)
-        df_ccs.to_excel(writer, sheet_name='CrossCurrencySwaps', index=False)
+        df_swaps.to_excel(writer, sheet_name='InterestRateSwap', index=False)
+        df_fx_fwd.to_excel(writer, sheet_name='FxForward', index=False)
+        df_fx_opt.to_excel(writer, sheet_name='FxOption', index=False)
+        df_ccs.to_excel(writer, sheet_name='CrossCurrencySwap', index=False)
         df_netting.to_excel(writer, sheet_name='NettingSets', index=False)
 
     print(f"✓ Sample Excel template created: {output_path}")

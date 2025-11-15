@@ -15,3 +15,10 @@ __all__ = [
     "InterestRateSwapBuilder",
     "CrossCurrencySwapBuilder",
 ]
+
+TradeBuilders = {
+    "FxForward": FxForwardBuilder,
+    "FxOption": FxOptionBuilder,
+    "CrossCurrencySwap": CrossCurrencySwapBuilder,
+    "InterestRateSwap": InterestRateSwapBuilder,
+}
