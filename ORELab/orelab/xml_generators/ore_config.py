@@ -39,7 +39,6 @@ class OREConfigGenerator:
 
     def update_paths(
         self,
-        asof_date: str,
         input_path: str,
         output_path: str,
         portfolio_file: Optional[str] = None,
@@ -50,7 +49,6 @@ class OREConfigGenerator:
         Update paths in configuration.
 
         Args:
-            asof_date: asofDate in YYYY-MM-DD format
             input_path: Base input path (relative or absolute)
             output_path: Output path for results
             portfolio_file: Portfolio XML filename (relative to input_path)
@@ -65,7 +63,6 @@ class OREConfigGenerator:
         # Update Setup parameters
         setup = root.find("Setup")
         if setup is not None:
-            self._update_parameter(setup, "asofDate", asof_date)
             self._update_parameter(setup, "inputPath", input_path)
             self._update_parameter(setup, "outputPath", output_path)
 
@@ -115,6 +112,21 @@ class OREConfigGenerator:
                                 if param.text.startswith("Static/"):
                                     filename = param.text[len("Static/"):]
                                     param.text = f"{static_path_prefix}{filename}"
+
+    def set_asof_date(self, asof_date: str) -> None:
+        """
+        Set asof date in configuration.
+
+        Args:
+            asof_date: AsOf date in YYYY-MM-DD format
+        """
+        if self._config_tree is None:
+            self.load_template()
+
+        root = self._config_tree.getroot()
+        setup = root.find("Setup")
+        if setup is not None:
+            self._update_parameter(setup, "asofDate", asof_date)
 
     def set_base_currency(self, currency: str) -> None:
         """

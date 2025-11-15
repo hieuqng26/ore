@@ -44,6 +44,7 @@ class OREXlsxConverter:
         self,
         excel_path: str,
         asof_date: str,
+        base_currency: str = "USD",
         template_ore_xml: Optional[str] = None,
         cleanup: bool = True,
         skip_invalid: bool = True,
@@ -87,6 +88,7 @@ class OREXlsxConverter:
         else:
             self.asof_date = None
 
+        self.base_currency = base_currency
         self.cleanup = cleanup
         self.skip_invalid = skip_invalid
         self.warn_on_skip = warn_on_skip
@@ -203,13 +205,15 @@ class OREXlsxConverter:
         self.output_path = os.path.join(OUTPUT_PATH, self.temp_folder.name)
 
         ore_generator.update_paths(
-            asof_date=self.asof_date,
             input_path=str(INPUT_PATH),
             output_path=str(self.output_path),
             portfolio_file=str(self.portfolio_path) if self.portfolio_path else None,
             netting_file=str(self.netting_path) if self.netting_path else None,
             static_path_prefix=str(STATIC_PATH)+'/'
         )
+
+        ore_generator.set_asof_date(self.asof_date)
+        ore_generator.set_base_currency(self.base_currency)
 
         self.ore_config_path = self.temp_folder / "ore.xml"
         ore_generator.save_to_file(self.ore_config_path)

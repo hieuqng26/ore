@@ -182,7 +182,7 @@ def example_ore_runner():
 
     try:
         # ORERunner handles the complete workflow
-        with ORERunner(excel_file, asof_date='2025-02-05', cleanup=True) as runner:
+        with ORERunner(excel_file, asof_date='2016-02-05', cleanup=True) as runner:
             # Execute: Convert → Run ORE → Parse results
             runner.run()
 
