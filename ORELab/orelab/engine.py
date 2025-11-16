@@ -17,18 +17,18 @@ from .config import INPUT_PATH, STATIC_PATH, OUTPUT_PATH, DATE_FORMAT_DISPLAY
 from .utils import create_temp_folder, cleanup_temp_folder, format_date_for_ore
 
 
-class OREXlsxConverter:
+class OREBuilder:
     """
     Excel to ORE converter with context manager interface.
 
     Usage:
-        with OREXlsxConverter('trades.xlsx', cleanup=True) as converter:
+        with OREBuilder('trades.xlsx', cleanup=True) as converter:
             ore_config_path = converter.ore_config_path
             # Run ORE with the generated configuration
             # Temp folder will be cleaned up automatically on exit
 
         # Override asofDate in ore.xml
-        with OREXlsxConverter('trades.xlsx', asof_date='2024-03-15') as converter:
+        with OREBuilder('trades.xlsx', asof_date='2024-03-15') as converter:
             ore_config_path = converter.ore_config_path
 
     The converter:
@@ -42,7 +42,7 @@ class OREXlsxConverter:
 
     def __init__(
         self,
-        excel_path: str,
+        input: str|dict,
         asof_date: str,
         base_currency: str = "USD",
         template_ore_xml: Optional[str] = None,
@@ -51,10 +51,10 @@ class OREXlsxConverter:
         warn_on_skip: bool = True
     ):
         """
-        Initialize OREXlsxConverter.
+        Initialize OREBuilder.
 
         Args:
-            excel_path: Path to Excel file with trade data
+            input: Path to Excel file with trade data or a dictionary of trade data
             asof_date: As-of date to override in ore.xml (YYYY-MM-DD or YYYYMMDD format)
             template_ore_xml: Path to template ore.xml (default: Input/ore.xml)
             cleanup: Whether to cleanup temp folder on exit
@@ -65,9 +65,7 @@ class OREXlsxConverter:
             FileNotFoundError: If Excel file doesn't exist
             ValueError: If asof_date format is invalid
         """
-        self.excel_path = Path(excel_path)
-        if not self.excel_path.exists():
-            raise FileNotFoundError(f"Excel file not found: {excel_path}")
+        self.input = input
 
         # Set template path
         if template_ore_xml:
@@ -138,63 +136,47 @@ class OREXlsxConverter:
             ValueError: If conversion fails
         """
         print("\n" + "=" * 60)
-        print("Excel to ORE Conversion")
-        print("=" * 60)
-        print(f"Excel file: {self.excel_path}")
-        print()
+        print("Starting ORE Builder")
+        print("=" * 60 + "\n")
 
         # Step 1: Read Excel file
-        print("Step 1: Reading Excel file...")
-        self.reader = ExcelTradeReader(str(self.excel_path))
-        self.reader.read_all()
-
-        if self.reader.get_warnings():
-            print("Excel Reader Warnings:")
-            for warning in self.reader.get_warnings():
-                print(f"  ⚠️  {warning}")
-
-        self.reader.print_summary()
+        print("Getting inputs...")
+        inputs = self._get_inputs()
 
         # Step 2: Create temporary folder
-        print("Step 2: Creating temporary folder...")
+        print("Creating temporary folder...")
         self.temp_folder = create_temp_folder(INPUT_PATH)
         print(f"✓ Created: {self.temp_folder}")
         print()
 
         # Step 3: Generate portfolio.xml
-        print("Step 3: Generating portfolio.xml...")
+        print("Generating portfolio.xml...")
         self.portfolio_generator = PortfolioGenerator(
             skip_invalid=self.skip_invalid,
             warn_on_skip=self.warn_on_skip
         )
 
         portfolio_elem = self.portfolio_generator.generate(
-            trades=self.reader.get_all_trades()
+            trades=inputs.get('trades', {})
         )
 
         self.portfolio_path = self.temp_folder / "portfolio.xml"
         self.portfolio_generator.save_to_file(portfolio_elem, self.portfolio_path)
         print(f"✓ Saved: {self.portfolio_path}")
 
-        self.portfolio_generator.print_summary()
-
         # Step 4: Generate netting.xml (if netting data exists)
-        netting_df = self.reader.get_netting_sets()
+        netting_df = inputs.get('netting_sets')
         if netting_df is not None and not netting_df.empty:
-            print("Step 4: Generating netting.xml...")
+            print("Generating netting.xml...")
             self.netting_generator = NettingGenerator()
             netting_elem = self.netting_generator.generate(netting_df)
 
             self.netting_path = self.temp_folder / "netting.xml"
             self.netting_generator.save_to_file(netting_elem, self.netting_path)
             print(f"✓ Saved: {self.netting_path}")
-            print()
-        else:
-            print("Step 4: No netting data found, skipping netting.xml")
-            print()
 
         # Step 5: Generate ore.xml
-        print("Step 5: Generating ore.xml configuration...")
+        print("Generating ore.xml...")
         ore_generator = OREConfigGenerator(self.template_ore_xml)
         ore_generator.load_template()
 
@@ -215,21 +197,38 @@ class OREXlsxConverter:
         self.ore_config_path = self.temp_folder / "ore.xml"
         ore_generator.save_to_file(self.ore_config_path)
         print(f"✓ Saved: {self.ore_config_path}")
-        print()
-
-        # Summary
-        print("=" * 60)
-        print("Conversion Complete!")
-        print("=" * 60)
-        print(f"Temporary folder: {self.temp_folder}")
-        print(f"ORE config file: {self.ore_config_path}")
-        print(f"Portfolio file: {self.portfolio_path}")
-        if self.netting_path:
-            print(f"Netting file: {self.netting_path}")
-        print(f"Output folder: {self.output_path}")
-        print("=" * 60 + "\n")
 
         return self.ore_config_path
+    
+    def _get_inputs(self) -> dict:
+        """
+        Get dictionary of generated file paths.
+
+        Returns:
+            Dictionary with paths to generated files
+        """
+        if isinstance(self.input, dict):
+            if not ('trades' in self.input):
+                raise ValueError("Input must contain 'trades'")
+            return self.input
+        
+        excel_path = Path(self.input)
+        if not excel_path.exists():
+            raise FileNotFoundError(f"Excel file not found: {excel_path}")
+        
+        print("Reading Excel file...")
+        self.reader = ExcelTradeReader(str(excel_path))
+        self.reader.read_all()
+
+        if self.reader.get_warnings():
+            print("Excel Reader Warnings:")
+            for warning in self.reader.get_warnings():
+                print(f"  ⚠️  {warning}")
+
+        return {
+            "trades": self.reader.get_all_trades(),
+            "netting_sets": self.reader.get_netting_sets()
+        }
 
     def get_generated_files(self) -> dict:
         """
@@ -253,7 +252,7 @@ class OREXlsxConverter:
             Dictionary with conversion statistics
         """
         summary = {
-            "excel_file": str(self.excel_path),
+            "input": self.input,
             "temp_folder": str(self.temp_folder) if self.temp_folder else None,
             "files_generated": {}
         }
@@ -272,7 +271,7 @@ class ORERunner:
     End-to-end ORE execution from Excel to results.
 
     This class orchestrates the complete workflow:
-    1. Convert Excel to XML using OREXlsxConverter
+    1. Convert Excel to XML using OREBuilder
     2. Run OREApp to execute analytics
     3. Parse and store NPV and exposure results
     4. Provide accessor methods for results
@@ -301,7 +300,7 @@ class ORERunner:
 
     def __init__(
         self,
-        excel_path: str,
+        input: str|dict,
         cleanup: bool = True,
         **converter_kwargs
     ):
@@ -309,23 +308,20 @@ class ORERunner:
         Initialize ORERunner.
 
         Args:
-            excel_path: Path to Excel file with trade data
+            input: Path to Excel file or dictionary with trade data
             cleanup: Whether to cleanup temp folders on exit (default: True)
-            **converter_kwargs: Additional arguments passed to OREXlsxConverter
+            **converter_kwargs: Additional arguments passed to OREBuilder
                 (e.g., template_ore_xml, asof_date, skip_invalid, warn_on_skip)
 
         Raises:
             FileNotFoundError: If Excel file doesn't exist
         """
-        self.excel_path = Path(excel_path)
-        if not self.excel_path.exists():
-            raise FileNotFoundError(f"Excel file not found: {excel_path}")
-
+        self.input = input
         self.cleanup = cleanup
         self.converter_kwargs = converter_kwargs
 
         # Components
-        self.converter: Optional[OREXlsxConverter] = None
+        self.converter: Optional[OREBuilder] = None
         self.output_path: Optional[Path] = None
 
         # Cached results (lazy-loaded)
@@ -363,15 +359,14 @@ class ORERunner:
             warnings.warn("ORE has already been executed. Skipping re-run.")
             return
 
-        # Step 1: Convert Excel to XML
+        # Step 1: Build XML
         print("=" * 60)
-        print("STEP 1: Excel to XML Conversion")
+        print("Build XML")
         print("=" * 60)
 
-        # Use OREXlsxConverter but don't auto-cleanup (we'll manage it)
-        self.converter = OREXlsxConverter(
-            excel_path=str(self.excel_path),
-            cleanup=False,  # We'll handle cleanup
+        self.converter = OREBuilder(
+            input=self.input,
+            cleanup=False,  # Use OREBuilder but don't auto-cleanup (we'll manage it)
             **self.converter_kwargs
         )
 
@@ -380,24 +375,20 @@ class ORERunner:
 
         # Step 2: Run ORE
         print("=" * 60)
-        print("STEP 2: Running ORE Analytics")
+        print("Running ORE Analytics")
         print("=" * 60)
 
-        print(f"Loading configuration: {ore_config_path}")
         params = ORE.Parameters()
         params.fromFile(str(ore_config_path))
-
-        print("Executing ORE...")
         app = ORE.OREApp(params, True)  # True = console mode
         app.run()
 
         print("\n✓ ORE execution completed")
         print(f"✓ Results written to: {self.output_path}")
-        print()
 
         # Step 3: Parse results
         print("=" * 60)
-        print("STEP 3: Parsing Results")
+        print("Parsing Results")
         print("=" * 60)
         self._parse_results()
 
@@ -424,7 +415,7 @@ class ORERunner:
 
             print("  ✓ Parsed NPV results")
         except FileNotFoundError:
-            print("  ⚠️  NPV results file not found")
+            print("  X  NPV results file not found")
 
     def _parse_xva(self) -> None:
         """Parse XVA results."""
@@ -436,7 +427,7 @@ class ORERunner:
 
             print("  ✓ Parsed XVA results")
         except FileNotFoundError:
-            print("  ⚠️  XVA results file not found")
+            print("  X  XVA results file not found")
 
     def _parse_exposures(self) -> None:
         """Parse exposure results (trade and netting set)."""
@@ -464,7 +455,7 @@ class ORERunner:
 
                 print(f"  ✓ Parsed {exposure_type} exposure results")
             except Exception as e:
-                print(f"  ⚠️  Failed to parse {exposure_type} exposure files: {e}")
+                print(f"  X  Failed to parse {exposure_type} exposure files: {e}")
 
     def get_npv(self) -> pd.DataFrame:
         """
@@ -547,24 +538,10 @@ class ORERunner:
             Dictionary with execution statistics and result counts
         """
         summary = {
-            "excel_file": str(self.excel_path),
+            "input": self.input,
             "executed": self._executed,
             "output_path": str(self.output_path) if self.output_path else None,
         }
-
-        if self._executed and self.output_path and self.output_path.exists():
-            # Add result counts
-            try:
-                npv_df = self.get_npv()
-                summary["num_trades"] = len(npv_df)
-            except FileNotFoundError:
-                pass
-
-            try:
-                xva_df = self.get_xva()
-                summary["xva_available"] = True
-            except FileNotFoundError:
-                summary["xva_available"] = False
 
         # Add converter summary if available
         if self.converter:

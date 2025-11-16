@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, Optional, List
 import warnings
 
-from .config import SHEET_NAMES, REQUIRED_COLUMNS
+from .config import REQUIRED_COLUMNS
 
 
 class ExcelTradeReader:
@@ -16,7 +16,6 @@ class ExcelTradeReader:
 
     Expected Excel structure:
     - Multiple sheets, one per trade type
-    - Sheet names defined in config.SHEET_NAMES
     - Each sheet has columns defined in config.REQUIRED_COLUMNS
     """
 
@@ -120,7 +119,7 @@ class ExcelTradeReader:
 
     def get_netting_sets(self) -> Optional[pd.DataFrame]:
         """Get Netting Sets data."""
-        return self.get_sheet(SHEET_NAMES["NETTING"])
+        return self.get_sheet('NettingSets')
 
     def get_warnings(self) -> List[str]:
         """
@@ -173,24 +172,3 @@ class ExcelTradeReader:
         missing = required - present
 
         return list(missing)
-
-    def print_summary(self) -> None:
-        """Print summary of loaded data."""
-        print("\n" + "=" * 60)
-        print("Excel Trade Data Summary")
-        print("=" * 60)
-        print(f"File: {self.excel_path}")
-        print()
-
-        if not self._data:
-            print("No data loaded.")
-        else:
-            for sheet_name, df in self._data.items():
-                print(f"{sheet_name:30s}: {len(df):4d} rows")
-
-        if self._warnings:
-            print("\nWarnings:")
-            for warning in self._warnings:
-                print(f"  • {warning}")
-
-        print("=" * 60 + "\n")

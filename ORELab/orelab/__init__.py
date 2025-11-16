@@ -7,6 +7,6 @@ and running ORE analytics.
 
 __version__ = "0.1.0"
 
-from .engine import OREXlsxConverter, ORERunner
+from .engine import OREBuilder, ORERunner
 
-__all__ = ["OREXlsxConverter", "ORERunner"]
+__all__ = ["OREBuilder", "ORERunner"]

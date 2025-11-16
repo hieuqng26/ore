@@ -10,11 +10,6 @@ INPUT_PATH = ORELAB_ROOT / "Input"
 STATIC_PATH = INPUT_PATH / "Static"
 OUTPUT_PATH = ORELAB_ROOT / "Output"
 
-# Excel sheet names
-SHEET_NAMES = {
-    "NETTING": "NettingSets"
-}
-
 # Required columns per trade type
 REQUIRED_COLUMNS = {
     "InterestRateSwap": [

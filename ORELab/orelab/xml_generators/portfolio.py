@@ -9,7 +9,6 @@ import pandas as pd
 
 from ..trade_builders import TradeBuilders
 from ..validators import TradeValidator
-from ..config import SHEET_NAMES, VALIDATION_SETTINGS
 
 
 class PortfolioGenerator:
@@ -98,7 +97,7 @@ class PortfolioGenerator:
                     })
 
                     if self.warn_on_skip:
-                        print(f"⚠️  Skipping invalid trade {trade_id}:")
+                        print(f"X  Skipping invalid trade {trade_id}:")
                         for error in validation_result.errors:
                             print(f"   • {error}")
                 else:
@@ -134,7 +133,7 @@ class PortfolioGenerator:
                     })
 
                     if self.warn_on_skip:
-                        print(f"⚠️  Skipping trade {trade_id} due to build error: {e}")
+                        print(f"X  Skipping trade {trade_id} due to build error: {e}")
                 else:
                     raise
 
@@ -167,20 +166,3 @@ class PortfolioGenerator:
             "generated_trades": self.generated_trades,
             "skipped_trades": self.skipped_trades
         }
-
-    def print_summary(self) -> None:
-        """Print summary of portfolio generation."""
-        print("\n" + "=" * 60)
-        print("Portfolio Generation Summary")
-        print("=" * 60)
-        print(f"Trades generated: {len(self.generated_trades)}")
-        print(f"Trades skipped:   {len(self.skipped_trades)}")
-
-        if self.skipped_trades:
-            print("\nSkipped trades:")
-            for skipped in self.skipped_trades:
-                print(f"  • {skipped['trade_id']} ({skipped['trade_type']})")
-                for error in skipped['errors']:
-                    print(f"    - {error}")
-
-        print("=" * 60 + "\n")

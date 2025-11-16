@@ -7,8 +7,9 @@ This script demonstrates how to:
 3. Read and display results
 """
 
+import pandas as pd
 from pathlib import Path
-from orelab import OREXlsxConverter, ORERunner
+from orelab import OREBuilder, ORERunner
 import ORE
 
 
@@ -21,7 +22,7 @@ def example_basic():
 
     excel_file = "templates/sample_trades.xlsx"
 
-    with OREXlsxConverter(excel_file, cleanup=True) as converter:
+    with OREBuilder(excel_file, cleanup=True) as converter:
         # Inside the context, temp folder exists
         print(f"\nTemporary folder created: {converter.temp_folder}")
         print(f"ORE config file: {converter.ore_config_path}")
@@ -45,7 +46,7 @@ def example_no_cleanup():
 
     excel_file = "templates/sample_trades.xlsx"
 
-    with OREXlsxConverter(excel_file, cleanup=False) as converter:
+    with OREBuilder(excel_file, cleanup=False) as converter:
         print(f"\nGenerated files:")
         print(f"  • ORE config: {converter.ore_config_path}")
         print(f"  • Portfolio:  {converter.portfolio_path}")
@@ -70,7 +71,7 @@ def example_manual():
     excel_file = "templates/sample_trades.xlsx"
 
     # Create converter
-    converter = OREXlsxConverter(
+    converter = OREBuilder(
         excel_file,
         skip_invalid=True,
         warn_on_skip=True,
@@ -109,7 +110,7 @@ def example_custom_config():
     custom_output = Path("Output/excel_conversion")
     custom_output.mkdir(parents=True, exist_ok=True)
 
-    converter = OREXlsxConverter(
+    converter = OREBuilder(
         excel_file,
         template_ore_xml=custom_template,
         output_path=str(custom_output),
@@ -137,7 +138,7 @@ def example_run_ore():
     custom_template = "Input/ore.xml"
 
     try:
-        with OREXlsxConverter(
+        with OREBuilder(
             excel_file,
             template_ore_xml=custom_template,
             # skip_invalid=True,
@@ -180,9 +181,17 @@ def example_ore_runner():
 
     excel_file = "templates/sample_trades.xlsx"
 
+    inputs = {'trades': {}, 'netting_sets': None}
+    all_sheets = pd.read_excel(excel_file, sheet_name=None)
+    for sheet_name, df in all_sheets.items():
+        if 'TradeType' in df.columns:
+            inputs['trades'][df['TradeType'].iloc[0]] = df
+        # elif sheet_name == 'NettingSets':
+        #     inputs['netting_sets'] = df
+
     try:
         # ORERunner handles the complete workflow
-        with ORERunner(excel_file, asof_date='2016-02-05', cleanup=True) as runner:
+        with ORERunner(inputs, asof_date='2016-02-05', cleanup=True) as runner:
             # Execute: Convert → Run ORE → Parse results
             runner.run()
 
@@ -191,8 +200,7 @@ def example_ore_runner():
             print("NPV Results")
             print("=" * 70)
             npv_df = runner.get_npv()
-            print(npv_df.head())
-            print(f"\nTotal trades: {len(npv_df)}")
+            print(npv_df)
 
             # Access XVA results
             try:
@@ -200,7 +208,7 @@ def example_ore_runner():
                 print("XVA Results")
                 print("=" * 70)
                 xva_df = runner.get_xva()
-                print(xva_df.head())
+                print(xva_df)
             except FileNotFoundError:
                 print("\nXVA results not available (requires XVA analytics enabled)")
 
@@ -210,22 +218,9 @@ def example_ore_runner():
                 print("Exposure Profiles")
                 print("=" * 70)
                 exposure_df = runner.get_exposures(exposure_type='trade')
-                print(f"Exposure data shape: {exposure_df.shape}")
-                print(exposure_df.head())
+                print(exposure_df)
             except FileNotFoundError:
                 print("\nExposure data not available (requires simulation)")
-
-            # Get execution summary
-            print("\n" + "=" * 70)
-            print("Execution Summary")
-            print("=" * 70)
-            summary = runner.get_summary()
-            print(f"Excel file: {summary['excel_file']}")
-            print(f"Executed: {summary['executed']}")
-            if 'num_trades' in summary:
-                print(f"Number of trades: {summary['num_trades']}")
-            if 'xva_available' in summary:
-                print(f"XVA available: {summary['xva_available']}")
 
         # Temp folders cleaned up automatically after exiting context
         print("\n✓ Temporary folders cleaned up automatically")
@@ -235,50 +230,6 @@ def example_ore_runner():
         print("Install ORE Python bindings to run this example.")
     except FileNotFoundError as e:
         print(f"\n⚠️  File not found: {e}")
-
-
-# Example 7: ORERunner with custom settings and result preservation
-def example_ore_runner_advanced():
-    """
-    Advanced ORERunner usage with custom settings and result preservation.
-    """
-    print("\n" + "=" * 70)
-    print("Example 7: Advanced ORERunner with Result Preservation")
-    print("=" * 70)
-
-    excel_file = "templates/sample_trades.xlsx"
-    results_dir = "Output/preserved_results"
-
-    try:
-        # ORERunner with custom converter settings
-        with ORERunner(
-            excel_file,
-            asof_date='2016-02-05',
-            cleanup=True,
-            # Pass additional args to OREXlsxConverter
-            template_ore_xml="Input/ore.xml",
-            skip_invalid=True,
-            warn_on_skip=True
-        ) as runner:
-            # Execute workflow
-            runner.run()
-
-            # Get results
-            npv_df = runner.get_npv()
-            print(f"\nProcessed {len(npv_df)} trades")
-
-            # Save results to permanent location before cleanup
-            runner.save_results(results_dir)
-            print(f"\n✓ Results preserved at: {results_dir}")
-
-        print("\n✓ Temporary folders cleaned up, but results preserved")
-
-    except ImportError:
-        print("\n⚠️  ORE Python module not available.")
-        print("Install ORE Python bindings to run this example.")
-    except Exception as e:
-        print(f"\n⚠️  Error: {e}")
-
 
 if __name__ == "__main__":
     print("\n" + "=" * 70)
@@ -294,7 +245,6 @@ if __name__ == "__main__":
 
     # New ORERunner examples - Complete end-to-end workflow
     example_ore_runner()
-    # example_ore_runner_advanced()
 
     print("\n" + "=" * 70)
     print("Examples completed!")
